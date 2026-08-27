@@ -2,13 +2,14 @@
 torch>=2.0.0
 torchvision>=0.15.0
 
-# Hugging Face Ecosystem & Diffusion
+# Hugging Face Ecosystem & High-Speed Diffusion
 diffusers>=0.28.0
 transformers>=4.40.0
 accelerate>=0.28.0
 peft>=0.10.0
 datasets>=2.18.0
 huggingface_hub>=0.22.0
+hf_transfer>=0.1.6
 
 # Image Processing & Utilities
 pillow>=10.0.0

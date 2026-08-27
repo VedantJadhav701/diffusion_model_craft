@@ -5,9 +5,15 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-# Disable unstable Xet LFS backend to enforce reliable standard LFS uploading
+# Disable unstable Xet LFS backend
 os.environ["HF_HUB_DISABLE_XET"] = "1"
-os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "0"
+
+# Enable Rust-accelerated ultra-fast transfer if hf_transfer is available
+try:
+    import hf_transfer
+    os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "1"
+except ImportError:
+    os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "0"
 
 from huggingface_hub import HfApi, login
 from datasets import Dataset, DatasetDict, Features, Image as HFImage, Value
@@ -65,23 +71,23 @@ Prepared with IndusCraft Data Pipeline for Pearl Academy & Fashion Education AI 
     return card_content
 
 def push_with_retry(dataset_dict: DatasetDict, repo_id: str, config_name: str, token: Optional[str] = None, private: bool = False, max_retries: int = 3):
-    """Pushes dataset to hub with retry logic for network resilience."""
+    """Pushes dataset to hub with fast transfer and retry logic for network resilience."""
     for attempt in range(max_retries):
         try:
-            logger.info(f"Pushing '{config_name}' layer to HF Hub (Attempt {attempt+1}/{max_retries})...")
+            logger.info(f"⚡ Fast pushing '{config_name}' layer to HF Hub (Attempt {attempt+1}/{max_retries})...")
             dataset_dict.push_to_hub(
                 repo_id,
                 config_name=config_name,
                 token=token,
                 private=private,
-                max_shard_size="100MB"
+                max_shard_size="50MB"
             )
-            logger.info(f"Successfully pushed '{config_name}' layer!")
+            logger.info(f"✅ Successfully pushed '{config_name}' layer!")
             return
         except Exception as e:
             logger.warning(f"Push for '{config_name}' failed on attempt {attempt+1}: {e}")
             if attempt < max_retries - 1:
-                time.sleep(3.0 * (attempt + 1))
+                time.sleep(2.0)
             else:
                 raise e
 
@@ -159,7 +165,7 @@ def prepare_and_push_to_hf(
 
         return DatasetDict({"train": train_ds, "validation": val_ds})
 
-    # Push all 3 dataset layers with robust retries
+    # Fast push all 3 dataset layers
     push_with_retry(create_split_dict(l1_train, l1_val), repo_id, "craft_reference", token=token, private=private)
     push_with_retry(create_split_dict(l2_train, l2_val), repo_id, "garment_application", token=token, private=private)
     push_with_retry(create_split_dict(l3_train, l3_val), repo_id, "design_details", token=token, private=private)
@@ -182,7 +188,7 @@ def prepare_and_push_to_hf(
     except Exception as e:
         logger.warning(f"Dataset card upload failed: {e}")
 
-    logger.info(f"Successfully uploaded 3 dataset layers to https://huggingface.co/datasets/{repo_id}")
+    logger.info(f"🎉 Fast upload complete! 3 dataset layers published at https://huggingface.co/datasets/{repo_id}")
 
 if __name__ == "__main__":
     import argparse
