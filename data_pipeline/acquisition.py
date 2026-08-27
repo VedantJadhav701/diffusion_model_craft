@@ -1,12 +1,14 @@
 import os
 import json
 import time
+import socket
 import shutil
 import logging
 import urllib.request
 import urllib.parse
 from pathlib import Path
 from typing import List, Dict, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from PIL import Image
 from tqdm import tqdm
 
@@ -19,7 +21,9 @@ from data_pipeline.config import (
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("Acquisition")
 
-# Wikimedia compliant User-Agent header
+# Fast socket timeout (4 seconds) to prevent hanging on slow mirrors
+socket.setdefaulttimeout(4.0)
+
 WIKIMEDIA_USER_AGENT = "IndusCraftBot/1.0 (https://github.com/VedantJadhav701/diffusion_model_craft; research@induscraft.org) Python-urllib/3.10"
 
 def ensure_directories():
@@ -91,36 +95,61 @@ def ingest_local_directory(source_dir: str, craft_name: str, license_info: str =
 
     return records
 
-def download_file_with_retry(url: str, dest_file: Path, retries: int = 3, delay: float = 0.5) -> bool:
+def download_single_image_worker(task: tuple) -> Optional[Dict]:
     """
-    Downloads file with exponential backoff and polite delay to prevent 429 Rate Limiting.
+    Worker function for multi-threaded fast image downloading with 4-second timeout.
     """
-    for attempt in range(retries):
-        try:
-            req = urllib.request.Request(
-                url,
-                headers={
-                    "User-Agent": WIKIMEDIA_USER_AGENT,
-                    "Accept": "image/webp,image/apng,image/*,*/*;q=0.8"
-                }
-            )
-            with urllib.request.urlopen(req, timeout=15) as response, open(dest_file, "wb") as f_out:
-                f_out.write(response.read())
-            time.sleep(delay)  # Polite delay between downloads
-            return True
-        except urllib.error.HTTPError as e:
-            if e.code == 429:
-                wait_time = (attempt + 1) * 2.0
-                time.sleep(wait_time)
-            else:
-                time.sleep(1.0)
-        except Exception:
-            time.sleep(1.0)
-    return False
+    idx, img_url, width, height, metadata, craft_name_clean, target_raw_dir = task
+
+    ext = os.path.splitext(urllib.parse.urlparse(img_url).path)[1]
+    if not ext or ext.lower() not in {".jpg", ".jpeg", ".png", ".webp"}:
+        ext = ".jpg"
+
+    filename = f"{craft_name_clean}_web_{idx:06d}{ext.lower()}"
+    dest_file = target_raw_dir / filename
+
+    try:
+        req = urllib.request.Request(
+            img_url,
+            headers={
+                "User-Agent": WIKIMEDIA_USER_AGENT,
+                "Accept": "image/webp,image/apng,image/*,*/*;q=0.8"
+            }
+        )
+        with urllib.request.urlopen(req, timeout=4.0) as response, open(dest_file, "wb") as f_out:
+            f_out.write(response.read())
+
+        with Image.open(dest_file) as img:
+            real_width, real_height = img.size
+            img_format = img.format
+
+        license_name = metadata.get("LicenseShortName", {}).get("value", "CC-BY/Public-Domain")
+        title = metadata.get("ObjectName", {}).get("value", craft_name_clean)
+
+        return {
+            "id": f"{craft_name_clean}_web_{idx:06d}",
+            "filename": filename,
+            "raw_path": str(dest_file),
+            "craft": craft_name_clean,
+            "source": "wikimedia_commons",
+            "source_url": img_url,
+            "license": license_name,
+            "width": real_width,
+            "height": real_height,
+            "format": img_format,
+            "initial_caption": f"{craft_name_clean} traditional art: {title}"
+        }
+    except Exception:
+        if dest_file.exists():
+            try:
+                dest_file.unlink()
+            except Exception:
+                pass
+        return None
 
 def fetch_wikimedia_craft_images(craft_name: str, max_images: int = 50) -> List[Dict]:
     """
-    Fetches open-license high-res imagery for a craft from Wikimedia Commons API with rate-limiting protection.
+    Fetches open-license high-res imagery using fast multi-threaded workers and socket timeouts.
     """
     ensure_directories()
     craft_name_clean = craft_name.lower().strip()
@@ -148,7 +177,7 @@ def fetch_wikimedia_craft_images(craft_name: str, max_images: int = 50) -> List[
         req = urllib.request.Request(url, headers={"User-Agent": WIKIMEDIA_USER_AGENT})
 
         try:
-            with urllib.request.urlopen(req, timeout=10) as response:
+            with urllib.request.urlopen(req, timeout=4.0) as response:
                 data = json.loads(response.read().decode("utf-8"))
                 pages = data.get("query", {}).get("pages", {})
 
@@ -164,53 +193,29 @@ def fetch_wikimedia_craft_images(craft_name: str, max_images: int = 50) -> List[
                     if img_url and "image" in mime and img_url not in seen_urls and width >= 300 and height >= 300:
                         seen_urls.add(img_url)
                         image_candidates.append((img_url, width, height, info.get("extmetadata", {})))
-            time.sleep(0.3)
-        except Exception as e:
-            logger.warning(f"Wikimedia API query '{query}' failed: {e}")
+        except Exception:
+            pass
 
-    logger.info(f"Found {len(image_candidates)} candidate images for '{craft_name_clean}'. Downloading up to {max_images}...")
+    logger.info(f"Found {len(image_candidates)} candidates for '{craft_name_clean}'. Fast downloading up to {max_images}...")
+
+    tasks = [
+        (idx, item[0], item[1], item[2], item[3], craft_name_clean, target_raw_dir)
+        for idx, item in enumerate(image_candidates[:max_images])
+    ]
 
     records = []
-    for idx, (img_url, width, height, metadata) in enumerate(tqdm(image_candidates[:max_images], desc=f"Downloading {craft_name_clean}")):
-        ext = os.path.splitext(urllib.parse.urlparse(img_url).path)[1]
-        if not ext or ext.lower() not in {".jpg", ".jpeg", ".png", ".webp"}:
-            ext = ".jpg"
-
-        filename = f"{craft_name_clean}_web_{idx:06d}{ext.lower()}"
-        dest_file = target_raw_dir / filename
-
-        success = download_file_with_retry(img_url, dest_file, retries=3, delay=0.4)
-        if success:
-            try:
-                with Image.open(dest_file) as img:
-                    real_width, real_height = img.size
-                    img_format = img.format
-
-                license_name = metadata.get("LicenseShortName", {}).get("value", "CC-BY/Public-Domain")
-                title = metadata.get("ObjectName", {}).get("value", craft_name_clean)
-
-                record = {
-                    "id": f"{craft_name_clean}_web_{idx:06d}",
-                    "filename": filename,
-                    "raw_path": str(dest_file),
-                    "craft": craft_name_clean,
-                    "source": "wikimedia_commons",
-                    "source_url": img_url,
-                    "license": license_name,
-                    "width": real_width,
-                    "height": real_height,
-                    "format": img_format,
-                    "initial_caption": f"{craft_name_clean} traditional art: {title}"
-                }
-                records.append(record)
-            except Exception as e:
-                logger.warning(f"Image corrupt or invalid: {dest_file}: {e}")
+    with ThreadPoolExecutor(max_workers=6) as executor:
+        futures = [executor.submit(download_single_image_worker, task) for task in tasks]
+        for future in tqdm(as_completed(futures), total=len(futures), desc=f"Downloading {craft_name_clean}"):
+            res = future.result()
+            if res:
+                records.append(res)
 
     if records:
         with open(RAW_METADATA_PATH, "a", encoding="utf-8") as f:
             for rec in records:
                 f.write(json.dumps(rec, ensure_ascii=False) + "\n")
-        logger.info(f"Successfully saved {len(records)} web metadata records for '{craft_name_clean}'")
+        logger.info(f"Successfully saved {len(records)} metadata records for '{craft_name_clean}'")
 
     return records
 
