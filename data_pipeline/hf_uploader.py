@@ -1,8 +1,14 @@
 import os
 import json
+import time
 import logging
 from pathlib import Path
 from typing import Optional
+
+# Disable unstable Xet LFS backend to enforce reliable standard LFS uploading
+os.environ["HF_HUB_DISABLE_XET"] = "1"
+os.environ["HF_HUB_ENABLE_HF_TRANSFER"] = "0"
+
 from huggingface_hub import HfApi, login
 from datasets import Dataset, DatasetDict, Features, Image as HFImage, Value
 
@@ -57,6 +63,27 @@ IndusCraft is a multi-layer multimodal dataset designed for fashion and textile 
 Prepared with IndusCraft Data Pipeline for Pearl Academy & Fashion Education AI Training.
 """
     return card_content
+
+def push_with_retry(dataset_dict: DatasetDict, repo_id: str, config_name: str, token: Optional[str] = None, private: bool = False, max_retries: int = 3):
+    """Pushes dataset to hub with retry logic for network resilience."""
+    for attempt in range(max_retries):
+        try:
+            logger.info(f"Pushing '{config_name}' layer to HF Hub (Attempt {attempt+1}/{max_retries})...")
+            dataset_dict.push_to_hub(
+                repo_id,
+                config_name=config_name,
+                token=token,
+                private=private,
+                max_shard_size="100MB"
+            )
+            logger.info(f"Successfully pushed '{config_name}' layer!")
+            return
+        except Exception as e:
+            logger.warning(f"Push for '{config_name}' failed on attempt {attempt+1}: {e}")
+            if attempt < max_retries - 1:
+                time.sleep(3.0 * (attempt + 1))
+            else:
+                raise e
 
 def prepare_and_push_to_hf(
     repo_id: str,
@@ -132,14 +159,10 @@ def prepare_and_push_to_hf(
 
         return DatasetDict({"train": train_ds, "validation": val_ds})
 
-    logger.info(f"Pushing Layer 1 (Craft Reference) to HF: {repo_id}...")
-    create_split_dict(l1_train, l1_val).push_to_hub(repo_id, config_name="craft_reference", token=token, private=private)
-
-    logger.info(f"Pushing Layer 2 (Garment Application Pairs) to HF: {repo_id}...")
-    create_split_dict(l2_train, l2_val).push_to_hub(repo_id, config_name="garment_application", token=token, private=private)
-
-    logger.info(f"Pushing Layer 3 (Design Details) to HF: {repo_id}...")
-    create_split_dict(l3_train, l3_val).push_to_hub(repo_id, config_name="design_details", token=token, private=private)
+    # Push all 3 dataset layers with robust retries
+    push_with_retry(create_split_dict(l1_train, l1_val), repo_id, "craft_reference", token=token, private=private)
+    push_with_retry(create_split_dict(l2_train, l2_val), repo_id, "garment_application", token=token, private=private)
+    push_with_retry(create_split_dict(l3_train, l3_val), repo_id, "design_details", token=token, private=private)
 
     # Upload Dataset Card
     counts = {
@@ -148,13 +171,16 @@ def prepare_and_push_to_hf(
         "l3_train": len(l3_train), "l3_val": len(l3_val)
     }
     card_text = generate_multi_layer_dataset_card(repo_id, counts)
-    api.upload_file(
-        path_or_fileobj=card_text.encode("utf-8"),
-        path_in_repo="README.md",
-        repo_id=repo_id,
-        repo_type="dataset",
-        token=token
-    )
+    try:
+        api.upload_file(
+            path_or_fileobj=card_text.encode("utf-8"),
+            path_in_repo="README.md",
+            repo_id=repo_id,
+            repo_type="dataset",
+            token=token
+        )
+    except Exception as e:
+        logger.warning(f"Dataset card upload failed: {e}")
 
     logger.info(f"Successfully uploaded 3 dataset layers to https://huggingface.co/datasets/{repo_id}")
 
