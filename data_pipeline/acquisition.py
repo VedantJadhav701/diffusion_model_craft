@@ -21,7 +21,6 @@ from data_pipeline.config import (
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("Acquisition")
 
-# Standard socket timeout (10 seconds)
 socket.setdefaulttimeout(10.0)
 
 WIKIMEDIA_USER_AGENT = "IndusCraftBot/1.0 (https://github.com/VedantJadhav701/diffusion_model_craft; research@induscraft.org) Python-urllib/3.10"
@@ -148,7 +147,7 @@ def download_single_image_worker(task: tuple) -> Optional[Dict]:
                 pass
         return None
 
-def fetch_wikimedia_craft_images(craft_name: str, max_images: int = 50) -> List[Dict]:
+def fetch_wikimedia_craft_images(craft_name: str, max_images: int = 500) -> List[Dict]:
     """
     Fetches open-license 1024px scaled image previews from Wikimedia Commons API.
     """
@@ -157,18 +156,17 @@ def fetch_wikimedia_craft_images(craft_name: str, max_images: int = 50) -> List[
     target_raw_dir = RAW_WEB_DIR / craft_name_clean
     target_raw_dir.mkdir(parents=True, exist_ok=True)
 
-    # Expanded search query terms per craft category
     craft_search_map = {
-        "chikankari": ["chikankari", "lucknow embroidery", "chikan work", "indian embroidery"],
-        "phulkari": ["phulkari", "punjabi phulkari", "phulkari dupatta", "bagh embroidery"],
-        "kalamkari": ["kalamkari", "kalamkari saree", "srikalahasti kalamkari", "indian block print"],
-        "ajrakh": ["ajrakh", "ajrak", "kutch block print", "woodblock printing india"],
-        "bandhani": ["bandhani", "bandhej", "tie dye saree india", "leheriya"],
-        "kantha": ["kantha", "kantha stitch", "bengal embroidery", "kantha quilt"],
-        "paithani": ["paithani", "paithani saree", "peacock zari", "maharashtra silk"],
-        "ikat": ["ikat", "pochampally", "patola", "double ikat"],
-        "madhubani": ["madhubani", "mithila painting", "bihar art", "indian folk painting"],
-        "warli": ["warli", "warli painting", "warli art", "tribal painting india"]
+        "chikankari": ["chikankari", "lucknow embroidery", "chikan work", "indian embroidery", "chikankari kurta", "white embroidery india"],
+        "phulkari": ["phulkari", "punjabi phulkari", "phulkari dupatta", "bagh embroidery", "khaddar embroidery", "phulkari suit"],
+        "kalamkari": ["kalamkari", "kalamkari saree", "srikalahasti kalamkari", "indian block print", "machilipatnam kalamkari", "kalamkari fabric"],
+        "ajrakh": ["ajrakh", "ajrak", "kutch block print", "woodblock printing india", "ajrakh print", "indigo madder print"],
+        "bandhani": ["bandhani", "bandhej", "tie dye saree india", "leheriya", "bandhani dupatta", "gujarat tie dye"],
+        "kantha": ["kantha", "kantha stitch", "bengal embroidery", "kantha quilt", "kantha saree", "running stitch craft"],
+        "paithani": ["paithani", "paithani saree", "peacock zari", "maharashtra silk", "paithani border", "yeola paithani"],
+        "ikat": ["ikat", "pochampally", "patola", "double ikat", "ikat saree", "pasapalli"],
+        "madhubani": ["madhubani", "mithila painting", "bihar art", "indian folk painting", "madhubani art", "mithila wall art"],
+        "warli": ["warli", "warli painting", "warli art", "tribal painting india", "warli folk art", "maharashtra tribal art"]
     }
 
     search_terms = craft_search_map.get(craft_name_clean, [craft_name_clean, f"{craft_name_clean} art"])
@@ -184,7 +182,7 @@ def fetch_wikimedia_craft_images(craft_name: str, max_images: int = 50) -> List[
             "https://commons.wikimedia.org/w/api.php?"
             "action=query&generator=search&"
             f"gsrsearch={urllib.parse.quote(query)}&"
-            f"gsrlimit={max_images}&gsrnamespace=6&"
+            f"gsrlimit=100&gsrnamespace=6&"
             "prop=imageinfo&iiprop=url|size|mime|extmetadata&iiurlwidth=1024&format=json"
         )
 
@@ -199,7 +197,6 @@ def fetch_wikimedia_craft_images(craft_name: str, max_images: int = 50) -> List[
                 imageinfo = page_info.get("imageinfo", [])
                 if imageinfo:
                     info = imageinfo[0]
-                    # Prefer 1024px scaled JPEG preview (thumburl) over 50MB TIFF original
                     img_url = info.get("thumburl", info.get("url"))
                     mime = info.get("mime", "")
                     width = info.get("thumbwidth", info.get("width", 0))
@@ -211,7 +208,7 @@ def fetch_wikimedia_craft_images(craft_name: str, max_images: int = 50) -> List[
         except Exception as e:
             logger.warning(f"Query '{query}' failed: {e}")
 
-    logger.info(f"Found {len(image_candidates)} candidates for '{craft_name_clean}'. Fast downloading 1024px previews...")
+    logger.info(f"Found {len(image_candidates)} candidates for '{craft_name_clean}'. Fast downloading up to {max_images}...")
 
     tasks = [
         (idx, item[0], item[1], item[2], item[3], craft_name_clean, target_raw_dir)
@@ -234,18 +231,79 @@ def fetch_wikimedia_craft_images(craft_name: str, max_images: int = 50) -> List[
 
     return records
 
-def fetch_all_crafts_online(max_per_craft: int = 30) -> Dict[str, int]:
+def fetch_hf_datasets_craft_images(craft_name: str, max_images: int = 500) -> List[Dict]:
     """
-    Automatically downloads 1024px craft design and wearable preview images across all 10 target Indian crafts.
+    Fetches craft images from public Hugging Face datasets (e.g. DiffusionDB / Indian Art).
+    """
+    ensure_directories()
+    craft_name_clean = craft_name.lower().strip()
+    target_raw_dir = RAW_HF_DIR / craft_name_clean
+    target_raw_dir.mkdir(parents=True, exist_ok=True)
+
+    records = []
+    try:
+        from datasets import load_dataset
+        logger.info(f"Searching Hugging Face Hub datasets for '{craft_name_clean}'...")
+        # Querying public diffusiondb 2M dataset for matching prompts
+        dataset = load_dataset("poloclub/diffusiondb", "2m_first_10k", split="train")
+        
+        matching_items = []
+        keywords = CRAFT_METADATA.get(craft_name_clean, {}).get("keywords", [craft_name_clean])
+        
+        for item in dataset:
+            prompt = item.get("prompt", "").lower()
+            if any(kw in prompt for kw in keywords) or craft_name_clean in prompt:
+                matching_items.append(item)
+                if len(matching_items) >= max_images:
+                    break
+
+        logger.info(f"Found {len(matching_items)} HF dataset matches for '{craft_name_clean}'. Saving locally...")
+        for idx, item in enumerate(matching_items):
+            filename = f"{craft_name_clean}_hf_{idx:06d}.jpg"
+            dest_file = target_raw_dir / filename
+            img = item["image"]
+            if img.mode != "RGB":
+                img = img.convert("RGB")
+            img.save(dest_file, "JPEG", quality=95)
+
+            record = {
+                "id": f"{craft_name_clean}_hf_{idx:06d}",
+                "filename": filename,
+                "raw_path": str(dest_file),
+                "craft": craft_name_clean,
+                "source": "huggingface_diffusiondb",
+                "license": "open_access",
+                "width": img.width,
+                "height": img.height,
+                "format": "JPEG",
+                "initial_caption": item.get("prompt", f"{craft_name_clean} art")
+            }
+            records.append(record)
+
+        if records:
+            with open(RAW_METADATA_PATH, "a", encoding="utf-8") as f:
+                for rec in records:
+                    f.write(json.dumps(rec, ensure_ascii=False) + "\n")
+            logger.info(f"Saved {len(records)} HF dataset records for '{craft_name_clean}'")
+
+    except Exception as e:
+        logger.warning(f"HF Dataset fetch failed for '{craft_name_clean}': {e}")
+
+    return records
+
+def fetch_all_crafts_online(max_per_craft: int = 500) -> Dict[str, int]:
+    """
+    Automatically downloads craft design and wearable preview images across all 10 target Indian crafts.
     """
     ensure_directories()
     results = {}
     for craft_key in CRAFT_METADATA.keys():
         logger.info(f"=== Fetching online images for craft: '{craft_key}' ===")
-        recs = fetch_wikimedia_craft_images(craft_key, max_images=max_per_craft)
-        results[craft_key] = len(recs)
+        recs_web = fetch_wikimedia_craft_images(craft_key, max_images=max_per_craft)
+        recs_hf = fetch_hf_datasets_craft_images(craft_key, max_images=max_per_craft)
+        results[craft_key] = len(recs_web) + len(recs_hf)
     return results
 
 if __name__ == "__main__":
     ensure_directories()
-    fetch_all_crafts_online(max_per_craft=30)
+    fetch_all_crafts_online(max_per_craft=500)
