@@ -10,14 +10,14 @@ sys.path.append(str(PROJECT_ROOT))
 
 from data_pipeline.acquisition import ensure_directories, ingest_local_directory, RAW_METADATA_PATH
 from data_pipeline.cleaning import run_cleaning_pipeline, CLEANED_METADATA_PATH
-from data_pipeline.captioning import process_and_caption_dataset
+from data_pipeline.captioning import process_multi_layer_dataset
 from data_pipeline.hf_uploader import prepare_and_push_to_hf
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("PipelineRunner")
 
 def main():
-    parser = argparse.ArgumentParser(description="IndusCraft End-to-End Data Pipeline")
+    parser = argparse.ArgumentParser(description="IndusCraft Multi-Layer Data Pipeline")
     parser.add_argument("--source-dir", type=str, default=None, help="Directory containing raw images to ingest")
     parser.add_argument("--craft", type=str, default="chikankari", help="Craft category label for source images")
     parser.add_argument("--vlm-model", type=str, default=None, help="HF model name for VLM captioning (e.g. Salesforce/blip2-opt-2.7b or microsoft/Florence-2-base)")
@@ -35,10 +35,10 @@ def main():
         logger.info(f"=== STEP 1: Ingesting raw images from {args.source_dir} ===")
         ingest_local_directory(args.source_dir, args.craft)
     else:
-        logger.info("=== STEP 1: Ingestion skipped (no --source-dir provided). Using existing raw metadata if present. ===")
+        logger.info("=== STEP 1: Ingestion skipped (no --source-dir provided). Using existing raw metadata. ===")
 
     if not RAW_METADATA_PATH.exists():
-        logger.error("No raw metadata found. Please specify --source-dir to ingest raw images first.")
+        logger.error("No raw metadata found. Please run scripts/fetch_online_data.py first.")
         return
 
     # Read raw records
@@ -56,20 +56,19 @@ def main():
         logger.error("No valid clean images remaining after cleaning phase.")
         return
 
-    # Step 3: VLM Captioning & Normalization & Train/Val Split
-    logger.info("=== STEP 3: VLM Captioning & Normalization ===")
-    train_recs, val_recs = process_and_caption_dataset(
+    # Step 3: Multi-Layer Captioning & Train/Val Split
+    logger.info("=== STEP 3: Multi-Layer Captioning & Normalization ===")
+    process_multi_layer_dataset(
         cleaned_records,
         vlm_model_name=args.vlm_model,
         val_split_ratio=args.val_split
     )
 
     logger.info(f"=== PIPELINE COMPLETE ===")
-    logger.info(f"Train samples: {len(train_recs)} | Validation samples: {len(val_recs)}")
 
     # Step 4: Hugging Face Upload (Optional)
     if args.push_hf:
-        logger.info(f"=== STEP 4: Uploading Dataset to Hugging Face ({args.push_hf}) ===")
+        logger.info(f"=== STEP 4: Uploading 3 Dataset Layers to Hugging Face ({args.push_hf}) ===")
         prepare_and_push_to_hf(args.push_hf, token=args.hf_token, private=args.private)
 
 if __name__ == "__main__":
