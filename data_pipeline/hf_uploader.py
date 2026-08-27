@@ -69,6 +69,13 @@ def prepare_and_push_to_hf(
     if token:
         login(token=token)
 
+    api = HfApi()
+    logger.info(f"Ensuring Hugging Face dataset repository exists: {repo_id}...")
+    try:
+        api.create_repo(repo_id=repo_id, repo_type="dataset", exist_ok=True, private=private)
+    except Exception as e:
+        logger.warning(f"Could not automatically create HF repo '{repo_id}': {e}. Proceeding with push_to_hub...")
+
     def load_records(jsonl_path: Path):
         records = []
         if jsonl_path.exists():
@@ -126,16 +133,15 @@ def prepare_and_push_to_hf(
         return DatasetDict({"train": train_ds, "validation": val_ds})
 
     logger.info(f"Pushing Layer 1 (Craft Reference) to HF: {repo_id}...")
-    create_split_dict(l1_train, l1_val).push_to_hub(repo_id, config_name="craft_reference", private=private)
+    create_split_dict(l1_train, l1_val).push_to_hub(repo_id, config_name="craft_reference", token=token, private=private)
 
     logger.info(f"Pushing Layer 2 (Garment Application Pairs) to HF: {repo_id}...")
-    create_split_dict(l2_train, l2_val).push_to_hub(repo_id, config_name="garment_application", private=private)
+    create_split_dict(l2_train, l2_val).push_to_hub(repo_id, config_name="garment_application", token=token, private=private)
 
     logger.info(f"Pushing Layer 3 (Design Details) to HF: {repo_id}...")
-    create_split_dict(l3_train, l3_val).push_to_hub(repo_id, config_name="design_details", private=private)
+    create_split_dict(l3_train, l3_val).push_to_hub(repo_id, config_name="design_details", token=token, private=private)
 
     # Upload Dataset Card
-    api = HfApi()
     counts = {
         "l1_train": len(l1_train), "l1_val": len(l1_val),
         "l2_train": len(l2_train), "l2_val": len(l2_val),
@@ -146,7 +152,8 @@ def prepare_and_push_to_hf(
         path_or_fileobj=card_text.encode("utf-8"),
         path_in_repo="README.md",
         repo_id=repo_id,
-        repo_type="dataset"
+        repo_type="dataset",
+        token=token
     )
 
     logger.info(f"Successfully uploaded 3 dataset layers to https://huggingface.co/datasets/{repo_id}")

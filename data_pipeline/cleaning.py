@@ -13,6 +13,14 @@ try:
 except ImportError:
     HAS_IMAGEHASH = False
 
+try:
+    import cv2
+    import numpy as np
+    face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+    HAS_OPENCV = True
+except Exception:
+    HAS_OPENCV = False
+
 from data_pipeline.config import (
     RAW_DIR, IMAGES_DIR, REJECTED_DIR, CLEANED_METADATA_PATH,
     MIN_IMAGE_WIDTH, MIN_IMAGE_HEIGHT, MAX_ASPECT_RATIO, DUPLICATE_PHASH_THRESHOLD
@@ -20,6 +28,20 @@ from data_pipeline.config import (
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("Cleaning")
+
+def detect_human_face(img: Image.Image) -> bool:
+    """
+    Detects if an image contains human face portraits.
+    Filters out human face photos to keep only garments, fabrics, designs, and crafts.
+    """
+    if not HAS_OPENCV:
+        return False
+    try:
+        np_img = np.array(img.convert("L"))
+        faces = face_cascade.detectMultiScale(np_img, scaleFactor=1.1, minNeighbors=4, minSize=(60, 60))
+        return len(faces) > 0
+    except Exception:
+        return False
 
 def compute_simple_hash(img: Image.Image) -> str:
     """Fallback average hash if imagehash library is not installed."""
@@ -38,16 +60,15 @@ def compute_perceptual_hash(img: Image.Image):
 
 def verify_and_clean_image(raw_path: Path) -> Tuple[bool, str, Optional[Image.Image]]:
     """
-    Checks for file corruption, resolution constraints, and aspect ratio boundaries.
+    Checks for file corruption, resolution constraints, aspect ratio, and human face portraits.
     """
     if not raw_path.exists():
         return False, "file_not_found", None
 
     try:
         with Image.open(raw_path) as img:
-            img.verify() # Verify file integrity
+            img.verify()
         
-        # Re-open after verify to get image properties
         img = Image.open(raw_path)
         img.load()
         
@@ -62,6 +83,10 @@ def verify_and_clean_image(raw_path: Path) -> Tuple[bool, str, Optional[Image.Im
         if aspect_ratio > MAX_ASPECT_RATIO:
             return False, f"extreme_aspect_ratio_{aspect_ratio:.2f}", None
 
+        # Filter out human face portraits to keep pure garments & craft designs
+        if detect_human_face(img):
+            return False, "contains_human_face", None
+
         # RGB Conversion check
         if img.mode not in ("RGB", "L"):
             img = img.convert("RGB")
@@ -73,7 +98,7 @@ def verify_and_clean_image(raw_path: Path) -> Tuple[bool, str, Optional[Image.Im
 
 def run_cleaning_pipeline(raw_records: List[Dict]) -> List[Dict]:
     """
-    Full cleaning, verification, deduplication, and standardization pipeline.
+    Full cleaning, verification, face filtering, deduplication, and standardization pipeline.
     """
     IMAGES_DIR.mkdir(parents=True, exist_ok=True)
     REJECTED_DIR.mkdir(parents=True, exist_ok=True)
@@ -82,7 +107,7 @@ def run_cleaning_pipeline(raw_records: List[Dict]) -> List[Dict]:
     rejected_records = []
     seen_hashes = []
 
-    logger.info(f"Starting cleaning pipeline for {len(raw_records)} images...")
+    logger.info(f"Starting cleaning & face-filtering pipeline for {len(raw_records)} images...")
 
     for record in tqdm(raw_records, desc="Cleaning & Filtering"):
         raw_path = Path(record.get("raw_path", ""))
@@ -116,14 +141,11 @@ def run_cleaning_pipeline(raw_records: List[Dict]) -> List[Dict]:
             shutil.copy2(raw_path, dest_rejected)
             continue
 
-        # Keep hash
         seen_hashes.append(img_hash)
 
-        # Save standardized clean image to IMAGES_DIR
         clean_filename = f"{record['id']}.jpg"
         clean_path = IMAGES_DIR / clean_filename
 
-        # Convert palette/RGBA/grayscale to RGB and save cleanly
         if img.mode != "RGB":
             img = img.convert("RGB")
 
@@ -139,9 +161,8 @@ def run_cleaning_pipeline(raw_records: List[Dict]) -> List[Dict]:
 
         cleaned_records.append(clean_record)
 
-    logger.info(f"Cleaning complete: {len(cleaned_records)} passed, {len(rejected_records)} rejected.")
+    logger.info(f"Cleaning complete: {len(cleaned_records)} passed (garments/crafts only), {len(rejected_records)} rejected.")
 
-    # Write cleaned metadata
     with open(CLEANED_METADATA_PATH, "w", encoding="utf-8") as f:
         for rec in cleaned_records:
             f.write(json.dumps(rec, ensure_ascii=False) + "\n")
