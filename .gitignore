@@ -1,0 +1,25 @@
+# Python & Virtual Environments
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+venv/
+env/
+
+# Data & Model Output Storage (Kept local or pushed to Hugging Face Hub)
+data/raw/
+data/images/
+data/rejected/
+data/metadata/*.jsonl
+models/
+outputs/
+logs/
+
+# Jupyter Notebook Checkpoints
+.ipynb_checkpoints/
+
+# IDE & OS files
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
