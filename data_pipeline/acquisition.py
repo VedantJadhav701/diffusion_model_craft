@@ -1,5 +1,6 @@
 import os
 import json
+import time
 import shutil
 import logging
 import urllib.request
@@ -17,6 +18,9 @@ from data_pipeline.config import (
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("Acquisition")
+
+# Wikimedia compliant User-Agent header
+WIKIMEDIA_USER_AGENT = "IndusCraftBot/1.0 (https://github.com/VedantJadhav701/diffusion_model_craft; research@induscraft.org) Python-urllib/3.10"
 
 def ensure_directories():
     """Ensure all required workspace directories exist."""
@@ -87,22 +91,49 @@ def ingest_local_directory(source_dir: str, craft_name: str, license_info: str =
 
     return records
 
+def download_file_with_retry(url: str, dest_file: Path, retries: int = 3, delay: float = 0.5) -> bool:
+    """
+    Downloads file with exponential backoff and polite delay to prevent 429 Rate Limiting.
+    """
+    for attempt in range(retries):
+        try:
+            req = urllib.request.Request(
+                url,
+                headers={
+                    "User-Agent": WIKIMEDIA_USER_AGENT,
+                    "Accept": "image/webp,image/apng,image/*,*/*;q=0.8"
+                }
+            )
+            with urllib.request.urlopen(req, timeout=15) as response, open(dest_file, "wb") as f_out:
+                f_out.write(response.read())
+            time.sleep(delay)  # Polite delay between downloads
+            return True
+        except urllib.error.HTTPError as e:
+            if e.code == 429:
+                wait_time = (attempt + 1) * 2.0
+                time.sleep(wait_time)
+            else:
+                time.sleep(1.0)
+        except Exception:
+            time.sleep(1.0)
+    return False
+
 def fetch_wikimedia_craft_images(craft_name: str, max_images: int = 50) -> List[Dict]:
     """
-    Fetches open-license (CC-BY / Public Domain) high-res imagery for a craft from Wikimedia Commons API.
+    Fetches open-license high-res imagery for a craft from Wikimedia Commons API with rate-limiting protection.
     """
     ensure_directories()
     craft_name_clean = craft_name.lower().strip()
     target_raw_dir = RAW_WEB_DIR / craft_name_clean
     target_raw_dir.mkdir(parents=True, exist_ok=True)
 
-    search_terms = CRAFT_METADATA.get(craft_name_clean, {}).get("keywords", [craft_name_clean])
-    search_terms = [craft_name_clean] + search_terms + [f"{craft_name_clean} textile", f"{craft_name_clean} saree", f"{craft_name_clean} embroidery"]
+    search_terms = [craft_name_clean] + CRAFT_METADATA.get(craft_name_clean, {}).get("keywords", [])
+    search_terms += [f"{craft_name_clean} textile", f"{craft_name_clean} saree", f"{craft_name_clean} embroidery"]
 
     seen_urls = set()
     image_candidates = []
 
-    for query in search_terms[:4]:
+    for query in search_terms[:5]:
         if len(image_candidates) >= max_images:
             break
 
@@ -114,10 +145,7 @@ def fetch_wikimedia_craft_images(craft_name: str, max_images: int = 50) -> List[
             "prop=imageinfo&iiprop=url|size|mime|extmetadata&format=json"
         )
 
-        req = urllib.request.Request(
-            url,
-            headers={"User-Agent": "IndusCraftBot/1.0 (https://github.com/induscraft; research@induscraft.org)"}
-        )
+        req = urllib.request.Request(url, headers={"User-Agent": WIKIMEDIA_USER_AGENT})
 
         try:
             with urllib.request.urlopen(req, timeout=10) as response:
@@ -136,10 +164,11 @@ def fetch_wikimedia_craft_images(craft_name: str, max_images: int = 50) -> List[
                     if img_url and "image" in mime and img_url not in seen_urls and width >= 300 and height >= 300:
                         seen_urls.add(img_url)
                         image_candidates.append((img_url, width, height, info.get("extmetadata", {})))
+            time.sleep(0.3)
         except Exception as e:
             logger.warning(f"Wikimedia API query '{query}' failed: {e}")
 
-    logger.info(f"Found {len(image_candidates)} eligible images for '{craft_name_clean}'. Downloading up to {max_images}...")
+    logger.info(f"Found {len(image_candidates)} candidate images for '{craft_name_clean}'. Downloading up to {max_images}...")
 
     records = []
     for idx, (img_url, width, height, metadata) in enumerate(tqdm(image_candidates[:max_images], desc=f"Downloading {craft_name_clean}")):
@@ -150,34 +179,32 @@ def fetch_wikimedia_craft_images(craft_name: str, max_images: int = 50) -> List[
         filename = f"{craft_name_clean}_web_{idx:06d}{ext.lower()}"
         dest_file = target_raw_dir / filename
 
-        try:
-            img_req = urllib.request.Request(img_url, headers={"User-Agent": "IndusCraftBot/1.0"})
-            with urllib.request.urlopen(img_req, timeout=15) as img_resp, open(dest_file, "wb") as f_out:
-                f_out.write(img_resp.read())
+        success = download_file_with_retry(img_url, dest_file, retries=3, delay=0.4)
+        if success:
+            try:
+                with Image.open(dest_file) as img:
+                    real_width, real_height = img.size
+                    img_format = img.format
 
-            with Image.open(dest_file) as img:
-                real_width, real_height = img.size
-                img_format = img.format
+                license_name = metadata.get("LicenseShortName", {}).get("value", "CC-BY/Public-Domain")
+                title = metadata.get("ObjectName", {}).get("value", craft_name_clean)
 
-            license_name = metadata.get("LicenseShortName", {}).get("value", "CC-BY/Public-Domain")
-            title = metadata.get("ObjectName", {}).get("value", craft_name_clean)
-
-            record = {
-                "id": f"{craft_name_clean}_web_{idx:06d}",
-                "filename": filename,
-                "raw_path": str(dest_file),
-                "craft": craft_name_clean,
-                "source": "wikimedia_commons",
-                "source_url": img_url,
-                "license": license_name,
-                "width": real_width,
-                "height": real_height,
-                "format": img_format,
-                "initial_caption": f"{craft_name_clean} traditional art: {title}"
-            }
-            records.append(record)
-        except Exception as e:
-            logger.warning(f"Could not download {img_url}: {e}")
+                record = {
+                    "id": f"{craft_name_clean}_web_{idx:06d}",
+                    "filename": filename,
+                    "raw_path": str(dest_file),
+                    "craft": craft_name_clean,
+                    "source": "wikimedia_commons",
+                    "source_url": img_url,
+                    "license": license_name,
+                    "width": real_width,
+                    "height": real_height,
+                    "format": img_format,
+                    "initial_caption": f"{craft_name_clean} traditional art: {title}"
+                }
+                records.append(record)
+            except Exception as e:
+                logger.warning(f"Image corrupt or invalid: {dest_file}: {e}")
 
     if records:
         with open(RAW_METADATA_PATH, "a", encoding="utf-8") as f:
