@@ -96,85 +96,88 @@ def fetch_wikimedia_craft_images(craft_name: str, max_images: int = 50) -> List[
     target_raw_dir = RAW_WEB_DIR / craft_name_clean
     target_raw_dir.mkdir(parents=True, exist_ok=True)
 
-    search_query = CRAFT_METADATA.get(craft_name_clean, {}).get("full_name", f"{craft_name_clean} traditional art")
-    search_keywords = CRAFT_METADATA.get(craft_name_clean, {}).get("keywords", [craft_name_clean])
-    query_str = f"{search_query} OR {' OR '.join(search_keywords[:3])}"
+    search_terms = CRAFT_METADATA.get(craft_name_clean, {}).get("keywords", [craft_name_clean])
+    search_terms = [craft_name_clean] + search_terms + [f"{craft_name_clean} textile", f"{craft_name_clean} saree", f"{craft_name_clean} embroidery"]
 
-    url = (
-        "https://commons.wikimedia.org/w/api.php?"
-        "action=query&generator=search&"
-        f"gsrsearch={urllib.parse.quote(query_str)}&"
-        f"gsrlimit={max_images}&gsrnamespace=6&"
-        "prop=imageinfo&iiprop=url|size|mime|extmetadata&format=json"
-    )
+    seen_urls = set()
+    image_candidates = []
 
-    req = urllib.request.Request(
-        url,
-        headers={"User-Agent": "IndusCraftBot/1.0 (https://github.com/induscraft; research@induscraft.org)"}
-    )
+    for query in search_terms[:4]:
+        if len(image_candidates) >= max_images:
+            break
 
-    logger.info(f"Searching Wikimedia Commons for '{craft_name_clean}' images...")
+        url = (
+            "https://commons.wikimedia.org/w/api.php?"
+            "action=query&generator=search&"
+            f"gsrsearch={urllib.parse.quote(query)}&"
+            f"gsrlimit={max_images}&gsrnamespace=6&"
+            "prop=imageinfo&iiprop=url|size|mime|extmetadata&format=json"
+        )
+
+        req = urllib.request.Request(
+            url,
+            headers={"User-Agent": "IndusCraftBot/1.0 (https://github.com/induscraft; research@induscraft.org)"}
+        )
+
+        try:
+            with urllib.request.urlopen(req, timeout=10) as response:
+                data = json.loads(response.read().decode("utf-8"))
+                pages = data.get("query", {}).get("pages", {})
+
+            for page_id, page_info in pages.items():
+                imageinfo = page_info.get("imageinfo", [])
+                if imageinfo:
+                    info = imageinfo[0]
+                    img_url = info.get("url")
+                    mime = info.get("mime", "")
+                    width = info.get("width", 0)
+                    height = info.get("height", 0)
+
+                    if img_url and "image" in mime and img_url not in seen_urls and width >= 300 and height >= 300:
+                        seen_urls.add(img_url)
+                        image_candidates.append((img_url, width, height, info.get("extmetadata", {})))
+        except Exception as e:
+            logger.warning(f"Wikimedia API query '{query}' failed: {e}")
+
+    logger.info(f"Found {len(image_candidates)} eligible images for '{craft_name_clean}'. Downloading up to {max_images}...")
+
     records = []
-    try:
-        with urllib.request.urlopen(req) as response:
-            data = json.loads(response.read().decode("utf-8"))
-            pages = data.get("query", {}).get("pages", {})
+    for idx, (img_url, width, height, metadata) in enumerate(tqdm(image_candidates[:max_images], desc=f"Downloading {craft_name_clean}")):
+        ext = os.path.splitext(urllib.parse.urlparse(img_url).path)[1]
+        if not ext or ext.lower() not in {".jpg", ".jpeg", ".png", ".webp"}:
+            ext = ".jpg"
 
-        image_urls = []
-        for page_id, page_info in pages.items():
-            imageinfo = page_info.get("imageinfo", [])
-            if imageinfo:
-                info = imageinfo[0]
-                img_url = info.get("url")
-                mime = info.get("mime", "")
-                width = info.get("width", 0)
-                height = info.get("height", 0)
+        filename = f"{craft_name_clean}_web_{idx:06d}{ext.lower()}"
+        dest_file = target_raw_dir / filename
 
-                if img_url and "image" in mime and width >= 400 and height >= 400:
-                    image_urls.append((img_url, width, height, info.get("extmetadata", {})))
+        try:
+            img_req = urllib.request.Request(img_url, headers={"User-Agent": "IndusCraftBot/1.0"})
+            with urllib.request.urlopen(img_req, timeout=15) as img_resp, open(dest_file, "wb") as f_out:
+                f_out.write(img_resp.read())
 
-        logger.info(f"Found {len(image_urls)} eligible web images for '{craft_name_clean}'. Downloading...")
+            with Image.open(dest_file) as img:
+                real_width, real_height = img.size
+                img_format = img.format
 
-        for idx, (img_url, width, height, metadata) in enumerate(tqdm(image_urls, desc=f"Downloading {craft_name_clean}")):
-            ext = os.path.splitext(urllib.parse.urlparse(img_url).path)[1]
-            if not ext or ext.lower() not in {".jpg", ".jpeg", ".png", ".webp"}:
-                ext = ".jpg"
+            license_name = metadata.get("LicenseShortName", {}).get("value", "CC-BY/Public-Domain")
+            title = metadata.get("ObjectName", {}).get("value", craft_name_clean)
 
-            filename = f"{craft_name_clean}_web_{idx:06d}{ext.lower()}"
-            dest_file = target_raw_dir / filename
-
-            try:
-                img_req = urllib.request.Request(img_url, headers={"User-Agent": "IndusCraftBot/1.0"})
-                with urllib.request.urlopen(img_req, timeout=15) as img_resp, open(dest_file, "wb") as f_out:
-                    f_out.write(img_resp.read())
-
-                # Verify downloaded file
-                with Image.open(dest_file) as img:
-                    real_width, real_height = img.size
-                    img_format = img.format
-
-                license_name = metadata.get("LicenseShortName", {}).get("value", "CC-BY/Public-Domain")
-                title = metadata.get("ObjectName", {}).get("value", craft_name_clean)
-
-                record = {
-                    "id": f"{craft_name_clean}_web_{idx:06d}",
-                    "filename": filename,
-                    "raw_path": str(dest_file),
-                    "craft": craft_name_clean,
-                    "source": "wikimedia_commons",
-                    "source_url": img_url,
-                    "license": license_name,
-                    "width": real_width,
-                    "height": real_height,
-                    "format": img_format,
-                    "initial_caption": f"{craft_name_clean} traditional art: {title}"
-                }
-                records.append(record)
-            except Exception as e:
-                logger.warning(f"Could not download {img_url}: {e}")
-
-    except Exception as e:
-        logger.error(f"Wikimedia API search failed for '{craft_name_clean}': {e}")
+            record = {
+                "id": f"{craft_name_clean}_web_{idx:06d}",
+                "filename": filename,
+                "raw_path": str(dest_file),
+                "craft": craft_name_clean,
+                "source": "wikimedia_commons",
+                "source_url": img_url,
+                "license": license_name,
+                "width": real_width,
+                "height": real_height,
+                "format": img_format,
+                "initial_caption": f"{craft_name_clean} traditional art: {title}"
+            }
+            records.append(record)
+        except Exception as e:
+            logger.warning(f"Could not download {img_url}: {e}")
 
     if records:
         with open(RAW_METADATA_PATH, "a", encoding="utf-8") as f:
@@ -198,4 +201,4 @@ def fetch_all_crafts_online(max_per_craft: int = 30) -> Dict[str, int]:
 
 if __name__ == "__main__":
     ensure_directories()
-    fetch_all_crafts_online(max_per_craft=10)
+    fetch_all_crafts_online(max_per_craft=30)
