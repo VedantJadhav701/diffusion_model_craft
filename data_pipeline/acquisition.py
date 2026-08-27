@@ -21,8 +21,8 @@ from data_pipeline.config import (
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 logger = logging.getLogger("Acquisition")
 
-# Fast socket timeout (4 seconds) to prevent hanging on slow mirrors
-socket.setdefaulttimeout(4.0)
+# Standard socket timeout (10 seconds)
+socket.setdefaulttimeout(10.0)
 
 WIKIMEDIA_USER_AGENT = "IndusCraftBot/1.0 (https://github.com/VedantJadhav701/diffusion_model_craft; research@induscraft.org) Python-urllib/3.10"
 
@@ -97,15 +97,11 @@ def ingest_local_directory(source_dir: str, craft_name: str, license_info: str =
 
 def download_single_image_worker(task: tuple) -> Optional[Dict]:
     """
-    Worker function for multi-threaded fast image downloading with 4-second timeout.
+    Worker function for downloading 1024px scaled JPEG thumbnails.
     """
     idx, img_url, width, height, metadata, craft_name_clean, target_raw_dir = task
 
-    ext = os.path.splitext(urllib.parse.urlparse(img_url).path)[1]
-    if not ext or ext.lower() not in {".jpg", ".jpeg", ".png", ".webp"}:
-        ext = ".jpg"
-
-    filename = f"{craft_name_clean}_web_{idx:06d}{ext.lower()}"
+    filename = f"{craft_name_clean}_web_{idx:06d}.jpg"
     dest_file = target_raw_dir / filename
 
     try:
@@ -113,15 +109,20 @@ def download_single_image_worker(task: tuple) -> Optional[Dict]:
             img_url,
             headers={
                 "User-Agent": WIKIMEDIA_USER_AGENT,
-                "Accept": "image/webp,image/apng,image/*,*/*;q=0.8"
+                "Accept": "image/jpeg,image/webp,image/*;q=0.8"
             }
         )
-        with urllib.request.urlopen(req, timeout=4.0) as response, open(dest_file, "wb") as f_out:
+        with urllib.request.urlopen(req, timeout=10.0) as response, open(dest_file, "wb") as f_out:
             f_out.write(response.read())
 
         with Image.open(dest_file) as img:
             real_width, real_height = img.size
             img_format = img.format
+
+        if real_width < 300 or real_height < 300:
+            if dest_file.exists():
+                dest_file.unlink()
+            return None
 
         license_name = metadata.get("LicenseShortName", {}).get("value", "CC-BY/Public-Domain")
         title = metadata.get("ObjectName", {}).get("value", craft_name_clean)
@@ -149,20 +150,33 @@ def download_single_image_worker(task: tuple) -> Optional[Dict]:
 
 def fetch_wikimedia_craft_images(craft_name: str, max_images: int = 50) -> List[Dict]:
     """
-    Fetches open-license high-res imagery using fast multi-threaded workers and socket timeouts.
+    Fetches open-license 1024px scaled image previews from Wikimedia Commons API.
     """
     ensure_directories()
     craft_name_clean = craft_name.lower().strip()
     target_raw_dir = RAW_WEB_DIR / craft_name_clean
     target_raw_dir.mkdir(parents=True, exist_ok=True)
 
-    search_terms = [craft_name_clean] + CRAFT_METADATA.get(craft_name_clean, {}).get("keywords", [])
-    search_terms += [f"{craft_name_clean} textile", f"{craft_name_clean} saree", f"{craft_name_clean} embroidery"]
+    # Expanded search query terms per craft category
+    craft_search_map = {
+        "chikankari": ["chikankari", "lucknow embroidery", "chikan work", "indian embroidery"],
+        "phulkari": ["phulkari", "punjabi phulkari", "phulkari dupatta", "bagh embroidery"],
+        "kalamkari": ["kalamkari", "kalamkari saree", "srikalahasti kalamkari", "indian block print"],
+        "ajrakh": ["ajrakh", "ajrak", "kutch block print", "woodblock printing india"],
+        "bandhani": ["bandhani", "bandhej", "tie dye saree india", "leheriya"],
+        "kantha": ["kantha", "kantha stitch", "bengal embroidery", "kantha quilt"],
+        "paithani": ["paithani", "paithani saree", "peacock zari", "maharashtra silk"],
+        "ikat": ["ikat", "pochampally", "patola", "double ikat"],
+        "madhubani": ["madhubani", "mithila painting", "bihar art", "indian folk painting"],
+        "warli": ["warli", "warli painting", "warli art", "tribal painting india"]
+    }
+
+    search_terms = craft_search_map.get(craft_name_clean, [craft_name_clean, f"{craft_name_clean} art"])
 
     seen_urls = set()
     image_candidates = []
 
-    for query in search_terms[:5]:
+    for query in search_terms:
         if len(image_candidates) >= max_images:
             break
 
@@ -171,13 +185,13 @@ def fetch_wikimedia_craft_images(craft_name: str, max_images: int = 50) -> List[
             "action=query&generator=search&"
             f"gsrsearch={urllib.parse.quote(query)}&"
             f"gsrlimit={max_images}&gsrnamespace=6&"
-            "prop=imageinfo&iiprop=url|size|mime|extmetadata&format=json"
+            "prop=imageinfo&iiprop=url|size|mime|extmetadata&iiurlwidth=1024&format=json"
         )
 
         req = urllib.request.Request(url, headers={"User-Agent": WIKIMEDIA_USER_AGENT})
 
         try:
-            with urllib.request.urlopen(req, timeout=4.0) as response:
+            with urllib.request.urlopen(req, timeout=10.0) as response:
                 data = json.loads(response.read().decode("utf-8"))
                 pages = data.get("query", {}).get("pages", {})
 
@@ -185,18 +199,19 @@ def fetch_wikimedia_craft_images(craft_name: str, max_images: int = 50) -> List[
                 imageinfo = page_info.get("imageinfo", [])
                 if imageinfo:
                     info = imageinfo[0]
-                    img_url = info.get("url")
+                    # Prefer 1024px scaled JPEG preview (thumburl) over 50MB TIFF original
+                    img_url = info.get("thumburl", info.get("url"))
                     mime = info.get("mime", "")
-                    width = info.get("width", 0)
-                    height = info.get("height", 0)
+                    width = info.get("thumbwidth", info.get("width", 0))
+                    height = info.get("thumbheight", info.get("height", 0))
 
-                    if img_url and "image" in mime and img_url not in seen_urls and width >= 300 and height >= 300:
+                    if img_url and img_url not in seen_urls:
                         seen_urls.add(img_url)
                         image_candidates.append((img_url, width, height, info.get("extmetadata", {})))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.warning(f"Query '{query}' failed: {e}")
 
-    logger.info(f"Found {len(image_candidates)} candidates for '{craft_name_clean}'. Fast downloading up to {max_images}...")
+    logger.info(f"Found {len(image_candidates)} candidates for '{craft_name_clean}'. Fast downloading 1024px previews...")
 
     tasks = [
         (idx, item[0], item[1], item[2], item[3], craft_name_clean, target_raw_dir)
@@ -204,7 +219,7 @@ def fetch_wikimedia_craft_images(craft_name: str, max_images: int = 50) -> List[
     ]
 
     records = []
-    with ThreadPoolExecutor(max_workers=6) as executor:
+    with ThreadPoolExecutor(max_workers=8) as executor:
         futures = [executor.submit(download_single_image_worker, task) for task in tasks]
         for future in tqdm(as_completed(futures), total=len(futures), desc=f"Downloading {craft_name_clean}"):
             res = future.result()
@@ -221,7 +236,7 @@ def fetch_wikimedia_craft_images(craft_name: str, max_images: int = 50) -> List[
 
 def fetch_all_crafts_online(max_per_craft: int = 30) -> Dict[str, int]:
     """
-    Automatically downloads craft design and wearable images across all 10 target Indian crafts.
+    Automatically downloads 1024px craft design and wearable preview images across all 10 target Indian crafts.
     """
     ensure_directories()
     results = {}
