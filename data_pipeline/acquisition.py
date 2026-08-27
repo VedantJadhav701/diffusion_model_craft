@@ -208,7 +208,7 @@ def fetch_wikimedia_craft_images(craft_name: str, max_images: int = 500) -> List
         except Exception as e:
             logger.warning(f"Query '{query}' failed: {e}")
 
-    logger.info(f"Found {len(image_candidates)} candidates for '{craft_name_clean}'. Fast downloading up to {max_images}...")
+    logger.info(f"Found {len(image_candidates)} candidates for '{craft_name_clean}'. Fast downloading 1024px previews...")
 
     tasks = [
         (idx, item[0], item[1], item[2], item[3], craft_name_clean, target_raw_dir)
@@ -244,8 +244,7 @@ def fetch_hf_datasets_craft_images(craft_name: str, max_images: int = 500) -> Li
     try:
         from datasets import load_dataset
         logger.info(f"Searching Hugging Face Hub datasets for '{craft_name_clean}'...")
-        # Querying public diffusiondb 2M dataset for matching prompts
-        dataset = load_dataset("poloclub/diffusiondb", "2m_first_10k", split="train")
+        dataset = load_dataset("poloclub/diffusiondb", "2m_first_10k", split="train", trust_remote_code=True)
         
         matching_items = []
         keywords = CRAFT_METADATA.get(craft_name_clean, {}).get("keywords", [craft_name_clean])
