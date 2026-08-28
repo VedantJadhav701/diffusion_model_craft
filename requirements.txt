@@ -11,6 +11,10 @@ datasets>=2.18.0
 huggingface_hub>=0.22.0
 hf_transfer>=0.1.6
 
+# Web App Interface & Environment Configuration
+streamlit>=1.30.0
+python-dotenv>=1.0.0
+
 # Image Processing & Utilities
 pillow>=10.0.0
 imagehash>=4.3.1

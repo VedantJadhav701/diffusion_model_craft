@@ -1,3 +1,7 @@
+# Environment variables & secrets (NEVER PUSH TO GIT)
+.env
+.env.local
+
 # Python & Virtual Environments
 __pycache__/
 *.py[cod]
@@ -5,6 +9,10 @@ __pycache__/
 .venv/
 venv/
 env/
+
+# Datasets & Zip archives
+*.zip
+indofashion_dataset.zip
 
 # Data & Model Output Storage (Kept local or pushed to Hugging Face Hub)
 data/raw/

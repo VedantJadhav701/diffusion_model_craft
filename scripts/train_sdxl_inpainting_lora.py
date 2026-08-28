@@ -40,7 +40,10 @@ class InpaintingTextToImageDataset(Dataset):
         ])
 
         logger.info(f"Loading Inpainting dataset split '{split}' from Hugging Face Hub: {hf_repo_or_local_path}")
-        self.dataset = load_dataset(hf_repo_or_local_path, name="garment_application", split=split)
+        try:
+            self.dataset = load_dataset(hf_repo_or_local_path, name="garment_application", split=split)
+        except Exception:
+            self.dataset = load_dataset(hf_repo_or_local_path, split=split)
 
     def generate_synthetic_region_mask(self, target_region: str, width: int = 768, height: int = 768) -> Image.Image:
         """
@@ -59,7 +62,7 @@ class InpaintingTextToImageDataset(Dataset):
             draw.rectangle([int(width*0.25), int(height*0.2), int(width*0.75), int(height*0.55)], fill=255)
         elif "hemline" in r:
             draw.rectangle([int(width*0.15), int(height*0.75), int(width*0.85), height], fill=255)
-        else: # full garment default mask
+        else:
             draw.rectangle([int(width*0.2), int(height*0.15), int(width*0.8), int(height*0.9)], fill=255)
         return mask
 
@@ -80,7 +83,6 @@ class InpaintingTextToImageDataset(Dataset):
         tensor_image = self.transform(image)
         tensor_mask = self.mask_transform(mask_img)
 
-        # Masked image representation
         tensor_masked_image = tensor_image * (1 - tensor_mask)
 
         return {
@@ -109,7 +111,7 @@ def main():
     parser.add_argument("--dataset-name", type=str, required=True, help="Hugging Face Dataset repo ID")
     parser.add_argument("--output-dir", type=str, default="./outputs/induscraft_inpainting_lora")
     parser.add_argument("--resolution", type=int, default=768)
-    parser.add_argument("--train-batch-size", type=int, default=2)
+    parser.add_argument("--train-batch-size", type=int, default=1)
     parser.add_argument("--num-train-epochs", type=int, default=10)
     parser.add_argument("--learning-rate", type=float, default=1e-4)
     parser.add_argument("--lora-rank", type=int, default=32)
@@ -117,6 +119,8 @@ def main():
     parser.add_argument("--gradient-accumulation-steps", type=int, default=4)
     parser.add_argument("--mixed-precision", type=str, default="fp16", choices=["no", "fp16", "bf16"])
     args = parser.parse_args()
+
+    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
     os.makedirs(args.output_dir, exist_ok=True)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -135,6 +139,7 @@ def main():
     vae.eval()
 
     unet = UNet2DConditionModel.from_pretrained(args.pretrained_model, subfolder="unet", torch_dtype=dtype)
+    unet.enable_gradient_checkpointing()
     noise_scheduler = DDPMScheduler.from_pretrained(args.pretrained_model, subfolder="scheduler")
 
     lora_config = LoraConfig(
@@ -144,14 +149,14 @@ def main():
         lora_dropout=0.05,
         bias="none",
     )
-    unet = get_peft_model(unet, lora_config)
+    unet.add_adapter(lora_config)
     unet.to(device)
-    unet.print_trainable_parameters()
 
     train_dataset = InpaintingTextToImageDataset(args.dataset_name, split="train", resolution=args.resolution)
     train_dataloader = DataLoader(train_dataset, batch_size=args.train_batch_size, shuffle=True, num_workers=2)
 
-    optimizer = torch.optim.AdamW(unet.parameters(), lr=args.learning_rate)
+    trainable_params = [p for p in unet.parameters() if p.requires_grad]
+    optimizer = torch.optim.AdamW(trainable_params, lr=args.learning_rate)
 
     global_step = 0
     logger.info(f"Starting Stage 2 Inpainting LoRA training for {args.num_train_epochs} epochs...")
@@ -207,7 +212,7 @@ def main():
             progress_bar.set_postfix({"loss": loss.item() * args.gradient_accumulation_steps})
 
     final_path = Path(args.output_dir) / "induscraft_inpainting_lora_final"
-    unet.save_pretrained(final_path)
+    unet.save_attn_procs(final_path)
     logger.info(f"Stage 2 Inpainting LoRA Training complete! Model saved to {final_path}")
 
 if __name__ == "__main__":

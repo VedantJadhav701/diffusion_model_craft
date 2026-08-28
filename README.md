@@ -4,6 +4,39 @@
 
 ---
 
+## 🚀 Official Published Models & Adapters on Hugging Face Hub
+
+- 📊 **Multimodal Dataset**: [vedantjadhav701/induscraft-dataset](https://huggingface.co/datasets/vedantjadhav701/induscraft-dataset)
+- ⚡ **Stage 1 Craft Knowledge LoRA Adapter**: [vedantjadhav701/induscraft-stage1-craft-lora](https://huggingface.co/vedantjadhav701/induscraft-stage1-craft-lora)
+- ⚡ **Stage 2 Inpainting LoRA Adapter**: [vedantjadhav701/induscraft-stage2-inpainting-lora](https://huggingface.co/vedantjadhav701/induscraft-stage2-inpainting-lora)
+- 🎨 **Stage 1 Merged SDXL Engine**: [vedantjadhav701/induscraft-sdxl-merged](https://huggingface.co/vedantjadhav701/induscraft-sdxl-merged)
+- 🧥 **Stage 2 Merged SDXL Inpaint Engine**: [vedantjadhav701/induscraft-sdxl-inpaint-merged](https://huggingface.co/vedantjadhav701/induscraft-sdxl-inpaint-merged)
+
+---
+
+## 📈 Evaluation & Training Results
+
+### 1. Training Convergence Metrics
+Both Stage 1 and Stage 2 SDXL LoRAs were trained for 15 Epochs using PyTorch + Diffusers with automatic mixed precision (`fp16`) and gradient checkpointing:
+
+| Stage | Training Target | Epochs | Rank / Alpha | Final Loss | Status |
+|---|---|---|---|---|---|
+| **Stage 1** | Craft Knowledge & Multi-View Generation | 15 | 64 / 64 | **0.0463** | ✅ Complete |
+| **Stage 2** | Regional Garment Inpainting | 15 | 64 / 64 | **0.0177** | ✅ Complete |
+
+### 2. Quantitative Evaluation (CLIP Score Alignment)
+Evaluated using OpenAI ViT-B-32-quickgelu text-image alignment metric across sample multi-view generations:
+
+| Sample ID | View Type / Prompt Description | CLIP Score |
+|---|---|---|
+| `design_sample_1.png` | **[front view]** Chikankari embroidery style on white modern kurta | **0.3178** |
+| `design_sample_2.png` | **[detail view]** Macro close-up shot of floral jaali stitch texture | **0.3086** |
+| `design_sample_3.png` | **[pattern view]** Seamless repeating Kalamkari tree of life print | **0.3060** |
+| `design_sample_4.png` | **[flat garment]** Technical flat layout of Paithani silk saree | **0.3188** |
+| **AVERAGE** | **Overall Prompt-Visual Alignment** | **0.3128** (Strong Alignment) |
+
+---
+
 ## 💡 Dual Core AI Workflows
 
 ```
@@ -44,75 +77,53 @@ View   View           View              View          (Preserved)     (Collar, S
 
 ---
 
+## 💻 Interactive Streamlit Web Application
+
+To launch the interactive testing GUI:
+
+```bash
+streamlit run app.py
+```
+
+---
+
 ## 📁 Repository Structure
 
 ```
 diffusion_model/
 ├── context.md               # Vision document & architectural blueprint
-├── requirements.txt         # Dependencies (diffusers, transformers, peft, datasets, imagehash)
-├── README.md                # Usage guide & instructions
+├── requirements.txt         # Dependencies (diffusers, transformers, peft, datasets, hf_transfer)
+├── README.md                # Usage guide & evaluation results
+├── app.py                   # Interactive Streamlit Web Application
 │
 ├── data_pipeline/           # Multi-Layer Data Processing Package
 │   ├── config.py            # Craft metadata, 3 dataset layer paths, region tags, view types
 │   ├── acquisition.py       # Automated web/HF craft image fetcher & local folder ingester
-│   ├── cleaning.py          # Integrity check, min resolution (512x512), pHash deduplication
+│   ├── cleaning.py          # Integrity check, face detection filter, pHash deduplication
 │   ├── captioning.py         # 3-Layer prompt normalizer (Multi-view tags & regional instructions)
-│   └── hf_uploader.py       # Multi-config Hugging Face Hub dataset uploader
+│   └── hf_uploader.py       # Multi-config Hugging Face Hub dataset uploader with retries
 │
-├── scripts/                 # Executable Python Scripts
-│   ├── fetch_online_data.py # Auto-download craft images for all 10 crafts
-│   ├── run_data_pipeline.py # End-to-end data pipeline runner
-│   ├── push_to_hf.py        # Upload prepared 3-layer dataset to HF Hub
-│   ├── train_sdxl_lora.py   # Stage 1: Craft Knowledge & Multi-View UNet LoRA Training
-│   └── train_sdxl_inpainting_lora.py # Stage 2: Regional Garment Inpainting LoRA Training
+├── scripts/                 # CLI Runners & Trainer Scripts
+│   ├── run_data_pipeline.py # End-to-end dataset acquisition, cleaning, captioning & HF upload CLI
+│   ├── train_sdxl_lora.py   # Stage 1 UNet LoRA Trainer (Craft Knowledge & Multi-View)
+│   └── train_sdxl_inpainting_lora.py # Stage 2 Inpainting LoRA Trainer (Regional Editing)
 │
-└── notebooks/               # Interactive Jupyter Notebooks
-    ├── 01_dataset_preparation_and_hf_push.ipynb  # Step 1: Prep 3-layer dataset & upload to HF
-    └── 02_sdxl_lora_training.ipynb               # Step 2: Cloud GPU Multi-Stage LoRA Training
+└── notebooks/               # Interactive Colab / Kaggle / Jupyter Notebooks
+    ├── 01_dataset_preparation_and_hf_push.ipynb
+    └── 02_sdxl_lora_training.ipynb   # All-in-one standalone training notebook
 ```
 
 ---
 
-## ⚡ Quick Start
+## 🧵 Included Indian Craft Categories
 
-### 1. Environment Setup
-```bash
-conda activate thermo_agent
-pip install -r requirements.txt
-```
-
-### 2. Fetch Data, Prepare 3-Layer Dataset & Upload to HF Hub
-Open [`notebooks/01_dataset_preparation_and_hf_push.ipynb`](file:///c:/Users/HP/projects/diffusion_model/notebooks/01_dataset_preparation_and_hf_push.ipynb) or run from CLI:
-```bash
-# Auto-download open-access images across all 10 Indian crafts
-python scripts/fetch_online_data.py --craft all --max-per-craft 30
-
-# Process 3-layer dataset and upload to Hugging Face Hub
-python scripts/run_data_pipeline.py --push-hf "your-hf-username/induscraft-dataset"
-```
-
-### 3. Train Models on Cloud GPU (DGX / RunPod / Colab Pro / Kaggle)
-
-#### Stage 1 — Train Craft Knowledge & Multi-View LoRA (Workflow A)
-```bash
-python scripts/train_sdxl_lora.py \
-    --pretrained-model "stabilityai/stable-diffusion-xl-base-1.0" \
-    --dataset-name "your-hf-username/induscraft-dataset" \
-    --output-dir "./outputs/induscraft_stage1_craft_lora" \
-    --resolution 768 \
-    --train-batch-size 2 \
-    --num-train-epochs 10 \
-    --lora-rank 32
-```
-
-#### Stage 2 — Train Regional Garment Inpainting LoRA (Workflow B)
-```bash
-python scripts/train_sdxl_inpainting_lora.py \
-    --pretrained-model "diffusers/stable-diffusion-xl-1.0-inpainting-0.1" \
-    --dataset-name "your-hf-username/induscraft-dataset" \
-    --output-dir "./outputs/induscraft_stage2_inpainting_lora" \
-    --resolution 768 \
-    --train-batch-size 2 \
-    --num-train-epochs 10 \
-    --lora-rank 32
-```
+- **Chikankari**: White-on-white delicate embroidery & shadow work (Lucknow, UP).
+- **Phulkari**: Vibrant silk thread floral geometry embroidery (Punjab).
+- **Kalamkari**: Hand-painted or block-printed organic dyes & mythological narrative art (Andhra Pradesh).
+- **Ajrakh**: Block-printed geometric motifs with indigo & madder dyes (Kutch, Gujarat).
+- **Bandhani**: Tie-and-dye intricate dot patterns (Rajasthan / Gujarat).
+- **Kantha**: Running stitch quilted embroidery on cotton/silk (West Bengal).
+- **Paithani**: Fine silk saree with gold zari peacock pallu borders (Maharashtra).
+- **Ikat**: Resist-dyed warp/weft geometric weave (Telangana / Odisha).
+- **Madhubani**: Traditional folk art lines with natural pigments (Mithila, Bihar).
+- **Warli**: Tribal geometric figure art (Maharashtra).
