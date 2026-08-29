@@ -97,55 +97,74 @@ def ingest_local_directory(source_dir: str, craft_name: str, license_info: str =
 def download_single_image_worker(task: tuple) -> Optional[Dict]:
     """
     Worker function for downloading 1024px scaled JPEG thumbnails.
+    Handles rate-limiting (HTTP 429) from Wikimedia with exponential backoff retries.
     """
+    import urllib.error
     idx, img_url, width, height, metadata, craft_name_clean, target_raw_dir = task
 
     filename = f"{craft_name_clean}_web_{idx:06d}.jpg"
     dest_file = target_raw_dir / filename
 
-    try:
-        req = urllib.request.Request(
-            img_url,
-            headers={
-                "User-Agent": WIKIMEDIA_USER_AGENT,
-                "Accept": "image/jpeg,image/webp,image/*;q=0.8"
+    max_retries = 3
+    for attempt in range(max_retries + 1):
+        try:
+            # Politeness delay to reduce concurrent request bursts
+            time.sleep(0.3 + 0.2 * attempt)
+            
+            req = urllib.request.Request(
+                img_url,
+                headers={
+                    "User-Agent": WIKIMEDIA_USER_AGENT,
+                    "Accept": "image/jpeg,image/webp,image/*;q=0.8"
+                }
+            )
+            with urllib.request.urlopen(req, timeout=10.0) as response, open(dest_file, "wb") as f_out:
+                f_out.write(response.read())
+
+            with Image.open(dest_file) as img:
+                real_width, real_height = img.size
+                img_format = img.format
+
+            if real_width < 300 or real_height < 300:
+                if dest_file.exists():
+                    dest_file.unlink()
+                return None
+
+            license_name = metadata.get("LicenseShortName", {}).get("value", "CC-BY/Public-Domain")
+            title = metadata.get("ObjectName", {}).get("value", craft_name_clean)
+
+            return {
+                "id": f"{craft_name_clean}_web_{idx:06d}",
+                "filename": filename,
+                "raw_path": str(dest_file),
+                "craft": craft_name_clean,
+                "source": "wikimedia_commons",
+                "source_url": img_url,
+                "license": license_name,
+                "width": real_width,
+                "height": real_height,
+                "format": img_format,
+                "initial_caption": f"{craft_name_clean} traditional art: {title}"
             }
-        )
-        with urllib.request.urlopen(req, timeout=10.0) as response, open(dest_file, "wb") as f_out:
-            f_out.write(response.read())
+        except urllib.error.HTTPError as e:
+            if e.code == 429 and attempt < max_retries:
+                sleep_time = 2.0 * (attempt + 1)
+                logger.warning(f"HTTP 429 Too Many Requests for {img_url}. Retrying in {sleep_time}s...")
+                time.sleep(sleep_time)
+                continue
+            else:
+                logger.warning(f"HTTP Error {e.code} for {img_url}: {e.reason}")
+                break
+        except Exception as e:
+            logger.warning(f"Failed to download image {img_url}: {e}")
+            break
 
-        with Image.open(dest_file) as img:
-            real_width, real_height = img.size
-            img_format = img.format
-
-        if real_width < 300 or real_height < 300:
-            if dest_file.exists():
-                dest_file.unlink()
-            return None
-
-        license_name = metadata.get("LicenseShortName", {}).get("value", "CC-BY/Public-Domain")
-        title = metadata.get("ObjectName", {}).get("value", craft_name_clean)
-
-        return {
-            "id": f"{craft_name_clean}_web_{idx:06d}",
-            "filename": filename,
-            "raw_path": str(dest_file),
-            "craft": craft_name_clean,
-            "source": "wikimedia_commons",
-            "source_url": img_url,
-            "license": license_name,
-            "width": real_width,
-            "height": real_height,
-            "format": img_format,
-            "initial_caption": f"{craft_name_clean} traditional art: {title}"
-        }
-    except Exception:
-        if dest_file.exists():
-            try:
-                dest_file.unlink()
-            except Exception:
-                pass
-        return None
+    if dest_file.exists():
+        try:
+            dest_file.unlink()
+        except Exception:
+            pass
+    return None
 
 def fetch_wikimedia_craft_images(craft_name: str, max_images: int = 500) -> List[Dict]:
     """
@@ -216,7 +235,7 @@ def fetch_wikimedia_craft_images(craft_name: str, max_images: int = 500) -> List
     ]
 
     records = []
-    with ThreadPoolExecutor(max_workers=8) as executor:
+    with ThreadPoolExecutor(max_workers=2) as executor:
         futures = [executor.submit(download_single_image_worker, task) for task in tasks]
         for future in tqdm(as_completed(futures), total=len(futures), desc=f"Downloading {craft_name_clean}"):
             res = future.result()
