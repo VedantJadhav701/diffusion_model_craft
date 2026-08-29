@@ -35,8 +35,15 @@ LAYER2_VAL_METADATA_PATH = METADATA_DIR / "layer2_app_pairs_val.jsonl"
 LAYER3_TRAIN_METADATA_PATH = METADATA_DIR / "layer3_design_details_train.jsonl"
 LAYER3_VAL_METADATA_PATH = METADATA_DIR / "layer3_design_details_val.jsonl"
 
-# Craft Categories & Metadata Definitions
 CRAFT_METADATA = {
+    "base_garment": {
+        "full_name": "Indian Ethnic Wear",
+        "region": "India",
+        "type": "Garment Structure",
+        "keywords": ["ethnic wear", "traditional garment", "plain outfit", "unembellished clothing"],
+        "default_trigger": "plain Indian ethnic clothing",
+        "description": "traditional Indian garment silhouette including kurtas, sarees, lehengas, and sherwanis without heavy pattern embellishment"
+    },
     "chikankari": {
         "full_name": "Chikankari Embroidery",
         "region": "Lucknow, Uttar Pradesh, India",

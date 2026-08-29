@@ -13,6 +13,7 @@ env/
 # Datasets & Zip archives
 *.zip
 indofashion_dataset.zip
+indofashion_dataset/
 
 # Data & Model Output Storage (Kept local or pushed to Hugging Face Hub)
 data/raw/
