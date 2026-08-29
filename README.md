@@ -69,11 +69,13 @@ View   View           View              View          (Preserved)     (Collar, S
 
 ## 📊 3-Layer Dataset Architecture
 
-| Layer | Dataset Name | Objective | Contents |
+The dataset is scaled to **1,702 total training samples** across three configurations:
+
+| Layer | Configuration Name | Objective | Training Size |
 |---|---|---|---|
-| **Layer 1** | **Craft Reference Knowledge** | Teaches authentic craft aesthetics | 50K-100K images + VLM craft captions (`chikankari`, `phulkari`, `kalamkari`, `ajrakh`, `bandhani`, `kantha`, `paithani`, `ikat`, `madhubani`, `warli`). |
-| **Layer 2** | **Garment Application Pairs** | Teaches regional inpainting & garment preservation | 20K-50K pairs: Plain garment image + region mask + editing instruction + designed garment. |
-| **Layer 3** | **Design Details & Macro Views** | Teaches macro texture & motif repeatability | 10K-30K macro close-up shots of collars, cuffs, sleeves, necklines, hemlines, stitch work, and repeat prints. |
+| **Layer 1** | **`craft_reference`** | Teaches authentic craft aesthetics | **575 Train / 63 Val** |
+| **Layer 2** | **`garment_application`** | Teaches regional inpainting & garment preservation | **575 Train / 63 Val** |
+| **Layer 3** | **`design_details`** | Teaches macro texture & motif repeatability | **384 Train / 42 Val** |
 
 ---
 
@@ -92,19 +94,21 @@ streamlit run app.py
 ```
 diffusion_model/
 ├── context.md               # Vision document & architectural blueprint
-├── requirements.txt         # Dependencies (diffusers, transformers, peft, datasets, hf_transfer)
+├── requirements.txt         # Dependencies (diffusers, transformers, peft, datasets, hf_transfer, python-dotenv)
 ├── README.md                # Usage guide & evaluation results
 ├── app.py                   # Interactive Streamlit Web Application
 │
 ├── data_pipeline/           # Multi-Layer Data Processing Package
 │   ├── config.py            # Craft metadata, 3 dataset layer paths, region tags, view types
-│   ├── acquisition.py       # Automated web/HF craft image fetcher & local folder ingester
+│   ├── acquisition.py       # Rate-limiting Wikimedia craft image crawler (HTTP 429 handler)
 │   ├── cleaning.py          # Integrity check, face detection filter, pHash deduplication
 │   ├── captioning.py         # 3-Layer prompt normalizer (Multi-view tags & regional instructions)
 │   └── hf_uploader.py       # Multi-config Hugging Face Hub dataset uploader with retries
 │
-├── scripts/                 # CLI Runners & Trainer Scripts
-│   ├── run_data_pipeline.py # End-to-end dataset acquisition, cleaning, captioning & HF upload CLI
+├── scripts/                 # CLI Runners & Preprocessors
+│   ├── run_data_pipeline.py # End-to-end dataset cleaning, captioning & HF upload CLI
+│   ├── fetch_online_data.py # Wikimedia Commons bulk downloader (handles rate limits)
+│   ├── integrate_indofashion.py # IndoFashion preprocessing and integration script
 │   ├── train_sdxl_lora.py   # Stage 1 UNet LoRA Trainer (Craft Knowledge & Multi-View)
 │   └── train_sdxl_inpainting_lora.py # Stage 2 Inpainting LoRA Trainer (Regional Editing)
 │
