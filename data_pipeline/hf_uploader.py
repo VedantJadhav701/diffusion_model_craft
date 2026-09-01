@@ -31,7 +31,7 @@ def generate_multi_layer_dataset_card(repo_id: str, summary_counts: dict) -> str
     """Generates Markdown Dataset Card for Hugging Face Hub."""
     craft_table_rows = []
     for key, info in CRAFT_METADATA.items():
-        craft_table_rows.append(f"| `{key}` | **{info['full_name']}** | {info['region']} |")
+        craft_table_rows.append(f"| **{key}** | {info['full_name']} | {info['region']} |")
     craft_table_str = "\n".join(craft_table_rows)
 
     l1_tr = summary_counts.get('l1_train', 0)
