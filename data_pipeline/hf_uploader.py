@@ -29,14 +29,25 @@ logger = logging.getLogger("HFUploader")
 
 def generate_multi_layer_dataset_card(repo_id: str, summary_counts: dict) -> str:
     """Generates Markdown Dataset Card for Hugging Face Hub."""
-    craft_list_str = "\n".join([f"- **{info['full_name']}** ({key}): {info['region']}" for key, info in CRAFT_METADATA.items()])
-    
+    craft_table_rows = []
+    for key, info in CRAFT_METADATA.items():
+        craft_table_rows.append(f"| `{key}` | **{info['full_name']}** | {info['region']} |")
+    craft_table_str = "\n".join(craft_table_rows)
+
+    l1_tr = summary_counts.get('l1_train', 0)
+    l1_v = summary_counts.get('l1_val', 0)
+    l2_tr = summary_counts.get('l2_train', 0)
+    l2_v = summary_counts.get('l2_val', 0)
+    l3_tr = summary_counts.get('l3_train', 0)
+    l3_v = summary_counts.get('l3_val', 0)
+    total_tr = l1_tr + l2_tr + l3_tr
+    total_v = l1_v + l2_v + l3_v
+
     card_content = f"""---
 license: cc-by-4.0
 task_categories:
 - text-to-image
 - image-to-image
-- inpainting
 tags:
 - indian-art
 - fashion-design
@@ -46,32 +57,63 @@ tags:
 - regional-inpainting
 pretty_name: IndusCraft - Multi-Layer Indian Traditional Crafts & Fashion Design Dataset
 size_categories:
-- 10K<n<100K
+- 1K<n<10K
 ---
 
 # 🎨 IndusCraft: Multi-Layer Indian Traditional Crafts & Fashion Design Dataset
 
-IndusCraft is a multi-layer multimodal dataset designed for fashion and textile education (e.g. Pearl Academy). It supports two primary AI workflows:
-1. **Workflow A — Create New Design**: Generates multi-view fashion designs (Front view, Detail macro view, Seamless Pattern view, Technical Flat view).
-2. **Workflow B — Apply Craft to Existing Garment**: Regional inpainting and editing that applies traditional Indian craft onto specific garment regions (Collar, Sleeves, Cuffs, Hemline, Chest) while preserving the student's original garment.
+**IndusCraft** is a multi-layer multimodal dataset designed for fashion and textile education (e.g. Pearl Academy). It supports two primary AI workflows:
+
+1. **Workflow A — Create New Design**: Generates multi-view fashion designs (`[front view]`, `[detail view]`, `[pattern view]`, `[flat garment]`).
+2. **Workflow B — Apply Craft to Existing Garment**: Regional inpainting and editing that applies traditional Indian craft onto specific garment regions (`Collar`, `Sleeves`, `Cuffs`, `Hemline`, `Chest`) while preserving the student's original garment.
+
+---
 
 ## 📊 Dataset Layers & Splitting Summary
 
-- **Layer 1: Craft Reference Knowledge**: {summary_counts.get('l1_train', 0)} Train / {summary_counts.get('l1_val', 0)} Val
-- **Layer 2: Garment Application Pairs & Instructions**: {summary_counts.get('l2_train', 0)} Train / {summary_counts.get('l2_val', 0)} Val
-- **Layer 3: Design Details & Macro Texture Views**: {summary_counts.get('l3_train', 0)} Train / {summary_counts.get('l3_val', 0)} Val
+| Layer | Configuration | Description | Train Records | Validation Records | Total Samples |
+|---|---|---|---|---|---|
+| **Layer 1** | `craft_reference` | Authentic craft aesthetics & multi-view generation | {l1_tr} | {l1_v} | **{l1_tr + l1_v}** |
+| **Layer 2** | `garment_application` | Regional inpainting & garment zone preservation | {l2_tr} | {l2_v} | **{l2_tr + l2_v}** |
+| **Layer 3** | `design_details` | Close-up macro stitch textures & repeating tiles | {l3_tr} | {l3_v} | **{l3_tr + l3_v}** |
+| **TOTAL** | | | **{total_tr}** | **{total_v}** | **{total_tr + total_v}** |
 
-## 🧵 Included Indian Craft Categories
+---
 
-{craft_list_str}
+## 🧵 Included Indian Craft Categories (11 Classes)
+
+| Category Key | Craft Name | Origin Region |
+|---|---|---|
+{craft_table_str}
+
+---
+
+## 💻 Quickstart: Loading in Python
+
+```python
+from datasets import load_dataset
+
+# Load Layer 1: Craft Reference Knowledge
+dataset_l1 = load_dataset('{repo_id}', 'craft_reference')
+
+# Load Layer 2: Garment Regional Inpainting
+dataset_l2 = load_dataset('{repo_id}', 'garment_application')
+
+# Load Layer 3: Design Details & Macro Textures
+dataset_l3 = load_dataset('{repo_id}', 'design_details')
+
+print(dataset_l1)
+```
+
+---
 
 ## 🛠️ Created by
-Prepared with IndusCraft Data Pipeline for Pearl Academy & Fashion Education AI Training.
+Prepared with the **IndusCraft Data Pipeline** for Pearl Academy & Fashion Education AI Training.
 """
     return card_content
 
-def push_with_retry(dataset_dict: DatasetDict, repo_id: str, config_name: str, token: Optional[str] = None, private: bool = False, max_retries: int = 3):
-    """Pushes dataset to hub with fast transfer and retry logic for network resilience."""
+def push_with_retry(dataset_dict: DatasetDict, repo_id: str, config_name: str, token: Optional[str] = None, private: bool = False, max_retries: int = 5):
+    """Pushes dataset to hub with fast transfer and robust retry logic for network resilience."""
     for attempt in range(max_retries):
         try:
             logger.info(f"⚡ Fast pushing '{config_name}' layer to HF Hub (Attempt {attempt+1}/{max_retries})...")
@@ -80,14 +122,15 @@ def push_with_retry(dataset_dict: DatasetDict, repo_id: str, config_name: str, t
                 config_name=config_name,
                 token=token,
                 private=private,
-                max_shard_size="50MB"
+                max_shard_size="20MB"
             )
             logger.info(f"✅ Successfully pushed '{config_name}' layer!")
             return
         except Exception as e:
             logger.warning(f"Push for '{config_name}' failed on attempt {attempt+1}: {e}")
             if attempt < max_retries - 1:
-                time.sleep(2.0)
+                logger.info(f"Retrying in 10 seconds (Attempt {attempt+2}/{max_retries})...")
+                time.sleep(10.0)
             else:
                 raise e
 
