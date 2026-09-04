@@ -120,9 +120,73 @@ CRAFT_METADATA = {
         "full_name": "Warli Tribal Art",
         "region": "Maharashtra, India",
         "type": "Tribal Painting",
-        "keywords": ["warli art", "warli painting", "tribal wall art", "white geometric stick figures"],
+        "keywords": ["warli painting", "warli art", "maharashtra tribal art", "geometric folk painting"],
         "default_trigger": "warli tribal art style",
         "description": "minimalist ancient tribal art composed of basic geometric shapes (circles, triangles, lines) painted in white pigment on red ochre or earth backgrounds depicting village life and ritual dances"
+    },
+    "zardozi": {
+        "full_name": "Zardozi & Gota Patti Embroidery",
+        "region": "Rajasthan & Uttar Pradesh, India",
+        "type": "Heavy Metallic Embroidery",
+        "keywords": ["zardozi", "gota patti", "gold thread embroidery", "zari embroidery", "royal embroidery"],
+        "default_trigger": "zardozi metallic embroidery style",
+        "description": "regal heavy embroidery using gold and silver metallic threads, beads, sequin work, and metallic ribbon applique on velvet, silk, or satin fabrics"
+    },
+    "kashida": {
+        "full_name": "Kashida & Aari Embroidery",
+        "region": "Kashmir, India",
+        "type": "Needlework Embroidery",
+        "keywords": ["kashida", "kashmiri embroidery", "aari work", "kashmir shawl embroidery", "chinar motif"],
+        "default_trigger": "kashmiri kashida embroidery style",
+        "description": "exquisite Kashmiri chain-stitch and needlework embroidery featuring chinar leaves, paisley motifs, floral vines, and rich jewel-tone wool/silk threads"
+    },
+    "pattachitra": {
+        "full_name": "Pattachitra Scroll Painting",
+        "region": "Odisha & West Bengal, India",
+        "type": "Traditional Cloth Scroll Painting",
+        "keywords": ["pattachitra", "patachitra", "odisha painting", "raghurajpur art", "scroll painting india"],
+        "default_trigger": "pattachitra scroll painting style",
+        "description": "intricate traditional cloth scroll painting depicting mythological narratives, crisp dark outlines, decorative borders, and vibrant natural mineral colors"
+    },
+    "bagh": {
+        "full_name": "Bagh Block Print",
+        "region": "Bagh, Dhar, Madhya Pradesh, India",
+        "type": "Vegetable Dye Block Print",
+        "keywords": ["bagh print", "bagh block print", "madhya pradesh block print", "natural dye block print"],
+        "default_trigger": "bagh block print style",
+        "description": "traditional hand-block printed cotton textile using carved wooden blocks with natural black and red vegetable dyes forming bold geometric and floral grids"
+    },
+    "banarasi": {
+        "full_name": "Banarasi Silk Brocade Weave",
+        "region": "Varanasi, Uttar Pradesh, India",
+        "type": "Silk & Zari Brocade Weaving",
+        "keywords": ["banarasi saree", "banarasi silk", "zari brocade", "varanasi weave", "kinkhab"],
+        "default_trigger": "banarasi silk brocade weave style",
+        "description": "opulent hand-woven silk brocade textile featuring intricate gold and silver zari metallic thread work, floral jaal weaves, and heavy ornamental borders"
+    },
+    "chanderi": {
+        "full_name": "Chanderi & Maheshwari Weave",
+        "region": "Madhya Pradesh, India",
+        "type": "Sheer Silk-Cotton Weaving",
+        "keywords": ["chanderi", "chanderi saree", "maheshwari weave", "sheer silk cotton", "zari border saree"],
+        "default_trigger": "chanderi sheer weave style",
+        "description": "lightweight, glossy, sheer silk-cotton woven fabric characterized by delicate zari borders, small coin (ashrafi) motifs, and fine translucent texture"
+    },
+    "pithora": {
+        "full_name": "Pithora Tribal Art",
+        "region": "Gujarat & Madhya Pradesh, India",
+        "type": "Tribal Folk Painting",
+        "keywords": ["pithora painting", "rathwa art", "tribal wall painting", "pithora horse art"],
+        "default_trigger": "pithora tribal painting style",
+        "description": "sacred tribal wall painting featuring stylized figures of horses, suns, sacred trees, and village deity rituals rendered in bright primary pigments"
+    },
+    "toda": {
+        "full_name": "Toda Embroidery (Pukhoor)",
+        "region": "Nilgiris, Tamil Nadu, India",
+        "type": "Reversible Darning Stitch Embroidery",
+        "keywords": ["toda embroidery", "pukhoor", "nilgiri craft", "toda shawl", "black red embroidery"],
+        "default_trigger": "toda geometric embroidery style",
+        "description": "distinctive reversible darning-stitch embroidery done on unbleached white cotton using bold red and black woolen threads in precise geometric stripes"
     }
 }
 

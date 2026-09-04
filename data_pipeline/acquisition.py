@@ -176,16 +176,25 @@ def fetch_wikimedia_craft_images(craft_name: str, max_images: int = 500) -> List
     target_raw_dir.mkdir(parents=True, exist_ok=True)
 
     craft_search_map = {
-        "chikankari": ["chikankari", "lucknow embroidery", "chikan work", "indian embroidery", "chikankari kurta", "white embroidery india"],
-        "phulkari": ["phulkari", "punjabi phulkari", "phulkari dupatta", "bagh embroidery", "khaddar embroidery", "phulkari suit"],
-        "kalamkari": ["kalamkari", "kalamkari saree", "srikalahasti kalamkari", "indian block print", "machilipatnam kalamkari", "kalamkari fabric"],
-        "ajrakh": ["ajrakh", "ajrak", "kutch block print", "woodblock printing india", "ajrakh print", "indigo madder print"],
-        "bandhani": ["bandhani", "bandhej", "tie dye saree india", "leheriya", "bandhani dupatta", "gujarat tie dye"],
-        "kantha": ["kantha", "kantha stitch", "bengal embroidery", "kantha quilt", "kantha saree", "running stitch craft"],
-        "paithani": ["paithani", "paithani saree", "peacock zari", "maharashtra silk", "paithani border", "yeola paithani"],
-        "ikat": ["ikat", "pochampally", "patola", "double ikat", "ikat saree", "pasapalli"],
-        "madhubani": ["madhubani", "mithila painting", "bihar art", "indian folk painting", "madhubani art", "mithila wall art"],
-        "warli": ["warli", "warli painting", "warli art", "tribal painting india", "warli folk art", "maharashtra tribal art"]
+        "base_garment": ["indian ethnic wear", "saree", "lehenga choli", "kurta pajama", "sherwani", "indian traditional dress", "salwar kameez", "dupatta"],
+        "chikankari": ["chikankari", "lucknow embroidery", "chikan work", "indian embroidery", "chikankari kurta", "white embroidery india", "lucknowi chikan", "chikankari saree"],
+        "phulkari": ["phulkari", "punjabi phulkari", "phulkari dupatta", "bagh embroidery", "khaddar embroidery", "phulkari suit", "phulkari craft"],
+        "kalamkari": ["kalamkari", "kalamkari saree", "srikalahasti kalamkari", "indian block print", "machilipatnam kalamkari", "kalamkari fabric", "hand painted kalamkari"],
+        "ajrakh": ["ajrakh", "ajrak", "kutch block print", "woodblock printing india", "ajrakh print", "indigo madder print", "ajrakh shawl"],
+        "bandhani": ["bandhani", "bandhej", "tie dye saree india", "leheriya", "bandhani dupatta", "gujarat tie dye", "rajasthan bandhani"],
+        "kantha": ["kantha", "kantha stitch", "bengal embroidery", "kantha quilt", "kantha saree", "running stitch craft", "nakshi kantha"],
+        "paithani": ["paithani", "paithani saree", "peacock zari", "maharashtra silk", "paithani border", "yeola paithani", "paithani pallu"],
+        "ikat": ["ikat", "pochampally", "patola", "double ikat", "ikat saree", "pasapalli", "telia rumal"],
+        "madhubani": ["madhubani", "mithila painting", "bihar art", "indian folk painting", "madhubani art", "mithila wall art", "madhubani motif"],
+        "warli": ["warli", "warli painting", "warli art", "tribal painting india", "warli folk art", "maharashtra tribal art", "warli motifs"],
+        "zardozi": ["zardozi", "zardosi", "gota patti", "gold embroidery india", "zari work", "heavy indian embroidery"],
+        "kashida": ["kashida", "kashmiri embroidery", "aari work", "kashmir shawl embroidery", "chinar motif embroidery"],
+        "pattachitra": ["pattachitra", "patachitra", "odisha painting", "raghurajpur art", "scroll painting india"],
+        "bagh": ["bagh print", "bagh block print", "madhya pradesh block print", "natural dye block print"],
+        "banarasi": ["banarasi saree", "banarasi silk", "zari brocade", "varanasi weave", "kinkhab"],
+        "chanderi": ["chanderi", "chanderi saree", "maheshwari weave", "sheer silk cotton", "zari border saree"],
+        "pithora": ["pithora painting", "rathwa art", "tribal wall painting", "pithora horse art"],
+        "toda": ["toda embroidery", "pukhoor", "nilgiri craft", "toda shawl", "toda geometric embroidery"]
     }
 
     search_terms = craft_search_map.get(craft_name_clean, [craft_name_clean, f"{craft_name_clean} art"])
