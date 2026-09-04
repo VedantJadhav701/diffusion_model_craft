@@ -20,7 +20,7 @@ def main():
     ensure_directories()
 
     if args.craft.lower() == "all":
-        logger.info(f"Downloading up to {args.max_per_craft} open-access images across all 10 Indian craft categories...")
+        logger.info(f"Downloading up to {args.max_per_craft} open-access images across all {len(CRAFT_METADATA)} Indian craft & garment categories...")
         summary = fetch_all_crafts_online(max_per_craft=args.max_per_craft)
         total = sum(summary.values())
         logger.info(f"=== DOWNLOAD COMPLETE ===")
