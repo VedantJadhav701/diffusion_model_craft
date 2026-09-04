@@ -206,35 +206,52 @@ def fetch_wikimedia_craft_images(craft_name: str, max_images: int = 500) -> List
         if len(image_candidates) >= max_images:
             break
 
-        url = (
-            "https://commons.wikimedia.org/w/api.php?"
-            "action=query&generator=search&"
-            f"gsrsearch={urllib.parse.quote(query)}&"
-            f"gsrlimit=100&gsrnamespace=6&"
-            "prop=imageinfo&iiprop=url|size|mime|extmetadata&iiurlwidth=1024&format=json"
-        )
+        offset = 0
+        # Paginate up to 10 pages (1000 results) per query term until max_images target is reached
+        for page_num in range(10):
+            if len(image_candidates) >= max_images:
+                break
 
-        req = urllib.request.Request(url, headers={"User-Agent": WIKIMEDIA_USER_AGENT})
+            url = (
+                "https://commons.wikimedia.org/w/api.php?"
+                "action=query&generator=search&"
+                f"gsrsearch={urllib.parse.quote(query)}&"
+                f"gsrlimit=100&gsroffset={offset}&gsrnamespace=6&"
+                "prop=imageinfo&iiprop=url|size|mime|extmetadata&iiurlwidth=1024&format=json"
+            )
+            offset += 100
 
-        try:
-            with urllib.request.urlopen(req, timeout=10.0) as response:
-                data = json.loads(response.read().decode("utf-8"))
-                pages = data.get("query", {}).get("pages", {})
+            req = urllib.request.Request(url, headers={"User-Agent": WIKIMEDIA_USER_AGENT})
 
-            for page_id, page_info in pages.items():
-                imageinfo = page_info.get("imageinfo", [])
-                if imageinfo:
-                    info = imageinfo[0]
-                    img_url = info.get("thumburl", info.get("url"))
-                    mime = info.get("mime", "")
-                    width = info.get("thumbwidth", info.get("width", 0))
-                    height = info.get("thumbheight", info.get("height", 0))
+            try:
+                with urllib.request.urlopen(req, timeout=10.0) as response:
+                    data = json.loads(response.read().decode("utf-8"))
+                    pages = data.get("query", {}).get("pages", {})
 
-                    if img_url and img_url not in seen_urls:
-                        seen_urls.add(img_url)
-                        image_candidates.append((img_url, width, height, info.get("extmetadata", {})))
-        except Exception as e:
-            logger.warning(f"Query '{query}' failed: {e}")
+                if not pages:
+                    break
+
+                new_found = 0
+                for page_id, page_info in pages.items():
+                    imageinfo = page_info.get("imageinfo", [])
+                    if imageinfo:
+                        info = imageinfo[0]
+                        img_url = info.get("thumburl", info.get("url"))
+                        mime = info.get("mime", "")
+                        width = info.get("thumbwidth", info.get("width", 0))
+                        height = info.get("thumbheight", info.get("height", 0))
+
+                        if img_url and img_url not in seen_urls:
+                            seen_urls.add(img_url)
+                            image_candidates.append((img_url, width, height, info.get("extmetadata", {})))
+                            new_found += 1
+
+                if new_found == 0:
+                    break
+
+            except Exception as e:
+                logger.warning(f"Query '{query}' offset {offset} failed: {e}")
+                break
 
     logger.info(f"Found {len(image_candidates)} candidates for '{craft_name_clean}'. Fast downloading 1024px previews...")
 
