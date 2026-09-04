@@ -69,13 +69,13 @@ View   View           View              View          (Preserved)     (Collar, S
 
 ## 📊 3-Layer Dataset Architecture
 
-The dataset is scaled to **1,702 total training samples** across three configurations:
+The dataset is scaled to **1,720 total training samples** across three configurations:
 
 | Layer | Configuration Name | Objective | Training Size |
 |---|---|---|---|
-| **Layer 1** | **`craft_reference`** | Teaches authentic craft aesthetics | **575 Train / 63 Val** |
-| **Layer 2** | **`garment_application`** | Teaches regional inpainting & garment preservation | **575 Train / 63 Val** |
-| **Layer 3** | **`design_details`** | Teaches macro texture & motif repeatability | **384 Train / 42 Val** |
+| **Layer 1** | **`craft_reference`** | Teaches authentic craft aesthetics | **581 Train / 64 Val** |
+| **Layer 2** | **`garment_application`** | Teaches regional inpainting & garment preservation | **581 Train / 64 Val** |
+| **Layer 3** | **`design_details`** | Teaches macro texture & motif repeatability | **387 Train / 43 Val** |
 
 ---
 
