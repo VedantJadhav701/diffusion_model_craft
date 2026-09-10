@@ -69,14 +69,14 @@ View   View           View              View          (Preserved)     (Collar, S
 
 ## 📊 3-Layer Dataset Architecture
 
-The dataset is scaled to **5,064 clean master images** generating **13,504 total dataset samples** across 19 craft categories:
+The dataset is scaled to **4,735 clean master images** generating **12,628 total dataset samples** across 19 craft categories:
 
 | Layer | Configuration Name | Objective | Training Size | Total Samples |
 |---|---|---|---|:---:|
-| **Layer 1** | **`craft_reference`** | Teaches authentic craft aesthetics | **4,558 Train / 506 Val** | **5,064** |
-| **Layer 2** | **`garment_application`** | Teaches regional inpainting & garment preservation | **4,558 Train / 506 Val** | **5,064** |
-| **Layer 3** | **`design_details`** | Teaches macro texture & motif repeatability | **3,039 Train / 337 Val** | **3,376** |
-| **TOTAL** | | | **12,155 Train / 1,349 Val** | **13,504** |
+| **Layer 1** | **`craft_reference`** | Teaches authentic craft aesthetics | **4,262 Train / 473 Val** | **4,735** |
+| **Layer 2** | **`garment_application`** | Teaches regional inpainting & garment preservation | **4,262 Train / 473 Val** | **4,735** |
+| **Layer 3** | **`design_details`** | Teaches macro texture & motif repeatability | **2,843 Train / 315 Val** | **3,158** |
+| **TOTAL** | | | **11,367 Train / 1,261 Val** | **12,628** |
 
 ---
 
