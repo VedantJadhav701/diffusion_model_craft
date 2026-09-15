@@ -58,12 +58,49 @@ def compute_perceptual_hash(img: Image.Image):
     else:
         return compute_simple_hash(img)
 
-def verify_and_clean_image(raw_path: Path) -> Tuple[bool, str, Optional[Image.Image]]:
+DOCUMENT_NOISE_KEYWORDS = [
+    "pdf", "page1", "page2", "page3", "catalog", "table_and_index", "decimal_classification",
+    "exhibition", "drawing_print", "state_magazine", "railway_station", "museum_building",
+    "stamp", "map_", "_map.", "document", "newspaper", "book_cover", "article", "index_for_arranging"
+]
+
+def is_document_or_noisy_scene(caption: str, filename: str) -> bool:
+    text = (caption + " " + filename).lower()
+    for kw in DOCUMENT_NOISE_KEYWORDS:
+        if kw in text:
+            return True
+    return False
+
+def is_scanned_document_page(img: Image.Image) -> bool:
+    if not HAS_OPENCV:
+        return False
+    try:
+        np_img = np.array(img.convert("L"))
+        white_pixel_ratio = float(np.mean(np_img > 242))
+        return white_pixel_ratio > 0.75
+    except Exception:
+        return False
+
+def compute_image_sharpness(img: Image.Image) -> float:
+    """Computes Laplacian variance to measure image sharpness and reject blurry photos."""
+    if not HAS_OPENCV:
+        return 999.0
+    try:
+        np_img = np.array(img.convert("L"))
+        return float(cv2.Laplacian(np_img, cv2.CV_64F).var())
+    except Exception:
+        return 999.0
+
+def verify_and_clean_image(raw_path: Path, caption: str = "", strict_1024: bool = False) -> Tuple[bool, str, Optional[Image.Image]]:
     """
-    Checks for file corruption, resolution constraints, aspect ratio, and human face portraits.
+    Checks for file corruption, resolution constraints, aspect ratio, document scans, human face portraits, and optional strict 1024px sharpness.
     """
     if not raw_path.exists():
         return False, "file_not_found", None
+
+    # Filter out obvious PDF scans and document metadata names
+    if is_document_or_noisy_scene(caption, raw_path.name):
+        return False, "document_or_noisy_scene", None
 
     try:
         with Image.open(raw_path) as img:
@@ -74,18 +111,32 @@ def verify_and_clean_image(raw_path: Path) -> Tuple[bool, str, Optional[Image.Im
         
         width, height = img.size
         
+        min_w = 1024 if strict_1024 else MIN_IMAGE_WIDTH
+        min_h = 1024 if strict_1024 else MIN_IMAGE_HEIGHT
+        max_ar = 2.0 if strict_1024 else MAX_ASPECT_RATIO
+
         # Resolution filter
-        if width < MIN_IMAGE_WIDTH or height < MIN_IMAGE_HEIGHT:
-            return False, f"low_resolution_{width}x{height}", None
+        if width < min_w or height < min_h:
+            return False, f"resolution_below_{min_w}x{min_h}_{width}x{height}", None
 
         # Aspect ratio filter
         aspect_ratio = max(width / height, height / width)
-        if aspect_ratio > MAX_ASPECT_RATIO:
+        if aspect_ratio > max_ar:
             return False, f"extreme_aspect_ratio_{aspect_ratio:.2f}", None
+
+        # Document scan filter (high white background text scans)
+        if is_scanned_document_page(img):
+            return False, "scanned_document_page", None
 
         # Filter out human face portraits to keep pure garments & craft designs
         if detect_human_face(img):
             return False, "contains_human_face", None
+
+        # Strict 1024px Blur & Sharpness Filter
+        if strict_1024:
+            sharpness = compute_image_sharpness(img)
+            if sharpness < 80.0:
+                return False, f"blurry_image_sharpness_{sharpness:.1f}", None
 
         # RGB Conversion check
         if img.mode not in ("RGB", "L"):
@@ -96,7 +147,7 @@ def verify_and_clean_image(raw_path: Path) -> Tuple[bool, str, Optional[Image.Im
     except Exception as e:
         return False, f"corrupt_or_unreadable_{str(e)}", None
 
-def run_cleaning_pipeline(raw_records: List[Dict]) -> List[Dict]:
+def run_cleaning_pipeline(raw_records: List[Dict], strict_1024: bool = False) -> List[Dict]:
     """
     Full cleaning, verification, face filtering, deduplication, and standardization pipeline.
     """
@@ -107,11 +158,13 @@ def run_cleaning_pipeline(raw_records: List[Dict]) -> List[Dict]:
     rejected_records = []
     seen_hashes = []
 
-    logger.info(f"Starting cleaning & face-filtering pipeline for {len(raw_records)} images...")
+    mode_str = " (Strict 1024px+ Pristine Mode)" if strict_1024 else ""
+    logger.info(f"Starting cleaning & face-filtering pipeline for {len(raw_records)} images{mode_str}...")
 
     for record in tqdm(raw_records, desc="Cleaning & Filtering"):
         raw_path = Path(record.get("raw_path", ""))
-        is_valid, status_msg, img = verify_and_clean_image(raw_path)
+        caption = record.get("initial_caption", "")
+        is_valid, status_msg, img = verify_and_clean_image(raw_path, caption, strict_1024=strict_1024)
 
         if not is_valid or img is None:
             record["rejection_reason"] = status_msg

@@ -25,6 +25,7 @@ def main():
     parser.add_argument("--push-hf", type=str, default=None, help="Hugging Face repo ID to upload dataset (e.g. username/induscraft-dataset)")
     parser.add_argument("--hf-token", type=str, default=None, help="Hugging Face access token")
     parser.add_argument("--private", action="store_true", help="Set uploaded HF dataset as private")
+    parser.add_argument("--strict-quality-1024", action="store_true", help="Filter for ultra-pristine 1024px+ resolution and sharpness score > 80")
     
     args = parser.parse_args()
 
@@ -50,7 +51,7 @@ def main():
 
     # Step 2: Cleaning & Deduplication
     logger.info("=== STEP 2: Cleaning & Deduplicating Images ===")
-    cleaned_records = run_cleaning_pipeline(raw_records)
+    cleaned_records = run_cleaning_pipeline(raw_records, strict_1024=args.strict_quality_1024)
 
     if not cleaned_records:
         logger.error("No valid clean images remaining after cleaning phase.")
